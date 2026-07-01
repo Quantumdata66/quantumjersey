@@ -170,13 +170,13 @@ In Supabase Dashboard → Authentication → Users → **Invite User** with your
 
 ## Author
 
-Built by **[Your Name]** as a portfolio project demonstrating production-grade web development with cloud and AI integration.
+Built by **[Abdulazeez Nurudeen Adedotun]** as a portfolio project demonstrating production-grade web development with cloud and AI integration.
 
-- GitHub: [@yourusername](https://github.com/yourusername)
-- LinkedIn: [linkedin.com/in/yourprofile](https://linkedin.com/in/yourprofile)
+- GitHub: [@Quantumdata66](https://github.com/Quantumdata66)
+- LinkedIn: [linkedin.com/in/Nurudeen](https://linkedin.com/in/Nurudeen)
 
 ---
 
 ## License
 
-MIT
+AFIT
