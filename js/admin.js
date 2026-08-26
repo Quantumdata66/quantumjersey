@@ -340,14 +340,27 @@ async function handlePublish(e) {
 
   try {
     showMsg("⬆️ Uploading image to Supabase Storage…", "info");
-    const imageUrl = await uploadProductImage(_uploadedFile, _adminSession);
+    let imageUrl;
+    try {
+      imageUrl = await uploadProductImage(_uploadedFile, _adminSession);
+    } catch (uploadErr) {
+      throw new Error(`Image upload failed: ${uploadErr.message}. The product was not saved.`);
+    }
 
     btn.textContent = "Publishing…";
     showMsg("📝 Publishing product to database…", "info");
-    const published = await publishProduct(
-      { product_name: name, category, price, sizes, image_url: imageUrl, description, badge, featured },
-      _adminSession
-    );
+    
+    let published;
+    try {
+      published = await publishProduct(
+        { product_name: name, category, price, sizes, image_url: imageUrl, description, badge, featured },
+        _adminSession
+      );
+    } catch (publishErr) {
+      // If DB insert fails after image was uploaded, attempt to clean up the uploaded image
+      await deleteStorageImageByUrl(imageUrl, _adminSession).catch(() => {});
+      throw new Error(`Database publishing failed: ${publishErr.message}`);
+    }
 
     showMsg(`✅ "${published.name}" published successfully!`, "success");
     resetPublishForm();
@@ -403,7 +416,7 @@ async function loadAdminProductList() {
             ${p.featured ? "★ Unfeature" : "☆ Feature"}
           </button>
           <button class="btn-admin-delete"
-                  onclick="handleDeleteProduct('${p.id}', '${p.name.replace(/'/g, "\\'")}')">
+                  onclick="handleDeleteProduct('${p.id}', '${p.name.replace(/'/g, "\\'")}', '${(p.image || "").replace(/'/g, "\\'")}')">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
                  fill="none" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round"
@@ -419,15 +432,42 @@ async function loadAdminProductList() {
   }
 }
 
-async function handleDeleteProduct(id, name) {
-  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+async function handleDeleteProduct(id, name, imageUrl) {
+  if (!confirm(`Delete "${name}"? This will permanently remove the product and its image.`)) return;
+  
   try {
+    // 1. If imageUrl is not passed, attempt to find it via getProductById
+    let targetImageUrl = imageUrl;
+    if (!targetImageUrl && typeof getProductById === "function") {
+      const prod = getProductById(id);
+      if (prod) targetImageUrl = prod.image || prod.image_url;
+    }
+
+    // 2. Clean up storage image if hosted in product-images bucket
+    let storageDeleted = true;
+    let storageError = null;
+    if (targetImageUrl && typeof deleteStorageImageByUrl === "function") {
+      const storageResult = await deleteStorageImageByUrl(targetImageUrl, _adminSession);
+      if (!storageResult.success && !storageResult.skipped) {
+        storageDeleted = false;
+        storageError = storageResult.error;
+      }
+    }
+
+    // 3. Delete database record
     await deleteProductById(id, _adminSession);
-    showMsg(`Deleted "${name}".`, "info");
+
+    // 4. Report outcome clearly to the admin
+    if (!storageDeleted) {
+      showMsg(`⚠️ Product "${name}" deleted, but the image file could not be removed from storage (${storageError}).`, "info");
+    } else {
+      showMsg(`✅ Deleted "${name}" and cleaned up its storage image.`, "info");
+    }
+
     loadAdminProductList();
     loadDashboard();
   } catch (err) {
-    showMsg(`❌ ${err.message}`, "error");
+    showMsg(`❌ Delete failed: ${err.message}`, "error");
   }
 }
 

@@ -92,21 +92,26 @@ function createProductCard(product) {
 
 /**
  * Updates the WhatsApp link with the currently selected size.
+ * Uses permanent getProductById lookup to eliminate cache desync bugs.
  */
 function updateWhatsAppLink(event, productId) {
   const selected = document.querySelector(`input[name="size-${productId}"]:checked`);
   const size = selected ? selected.value : null;
-  const product = _productCache.find(p => p.id === productId);
-  if (product) event.currentTarget.href = buildWhatsAppLink(product, size);
+  const product = (typeof getProductById === "function") ? getProductById(productId) : null;
+  if (product && event.currentTarget) {
+    event.currentTarget.href = buildWhatsAppLink(product, size);
+  }
 }
 
-// Update links on size radio change
+// Update links on size radio change using permanent product registry
 document.addEventListener("change", function(e) {
   if (e.target && e.target.type === "radio" && e.target.name.startsWith("size-")) {
     const productId = e.target.name.replace("size-", "");
-    const product = _productCache.find(p => p.id === productId);
+    const product = (typeof getProductById === "function") ? getProductById(productId) : null;
     const btn = document.getElementById(`order-${productId}`);
-    if (product && btn) btn.href = buildWhatsAppLink(product, e.target.value);
+    if (product && btn) {
+      btn.href = buildWhatsAppLink(product, e.target.value);
+    }
   }
 });
 
@@ -116,30 +121,41 @@ function getCategoryLabel(cat) {
 
 /**
  * Renders product cards into a container element.
+ * Supports appending new cards for "Load More" pagination.
  */
-function renderProducts(products, containerId) {
+function renderProducts(products, containerId, append = false) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
-  _productCache = products; // Keep sync cache up to date
+  // Always register fetched products into the permanent registry
+  if (typeof registerProducts === "function") {
+    registerProducts(products);
+  }
 
-  if (products.length === 0) {
+  if (!append && products.length === 0) {
     container.innerHTML = `<div class="empty-state"><p>No products found.</p></div>`;
     return;
   }
 
-  container.innerHTML = products.map(createProductCard).join("");
-  const cards = container.querySelectorAll(".product-card");
-  cards.forEach((card, i) => {
-    card.style.animationDelay = `${i * 0.07}s`;
+  const cardsHTML = products.map(createProductCard).join("");
+
+  if (append) {
+    container.insertAdjacentHTML("beforeend", cardsHTML);
+  } else {
+    container.innerHTML = cardsHTML;
+  }
+
+  const newCards = container.querySelectorAll(".product-card:not(.card-animate-in)");
+  newCards.forEach((card, i) => {
+    card.style.animationDelay = `${i * 0.05}s`;
     card.classList.add("card-animate-in");
   });
 }
 
-// ─── Async Page Initialisation ───────────────────────────────
+// ─── Async Page Initialisation & "Load More" Pagination ──────
 
 /**
- * Asynchronously load and render products for category pages.
+ * Asynchronously load and render products for category/catalogue pages with Load More pagination.
  * @param {string} containerId - Grid container ID
  * @param {string} defaultCategory - Default category filter ('all' or slug)
  */
@@ -151,15 +167,94 @@ async function initPageProducts(containerId, defaultCategory = "all") {
 
   let currentCategory = defaultCategory;
   let currentSearch = "";
+  let currentPage = 0;
+  let totalMatchingCount = 0;
+  let loadedProductsCount = 0;
 
-  async function applyFilterAndSearch() {
+  // Ensure pagination container exists right after the grid
+  let paginationWrapper = document.getElementById(`pagination-${containerId}`);
+  if (!paginationWrapper) {
+    const gridEl = document.getElementById(containerId);
+    if (gridEl) {
+      paginationWrapper = document.createElement("div");
+      paginationWrapper.id = `pagination-${containerId}`;
+      paginationWrapper.className = "pagination-wrap";
+      gridEl.parentNode.insertBefore(paginationWrapper, gridEl.nextSibling);
+    }
+  }
+
+  function updatePaginationUI(hasMore) {
+    if (!paginationWrapper) return;
+    if (totalMatchingCount === 0) {
+      paginationWrapper.innerHTML = "";
+      return;
+    }
+
+    paginationWrapper.innerHTML = `
+      <div class="pagination-status" style="text-align:center;margin-top:36px;display:flex;flex-direction:column;align-items:center;gap:14px;">
+        <p style="color:var(--text-secondary);font-size:0.9rem;font-weight:500;">
+          Showing <span style="color:var(--accent-green);font-weight:700;">${loadedProductsCount}</span> of <span style="color:var(--text-primary);font-weight:700;">${totalMatchingCount}</span> products
+        </p>
+        ${hasMore ? `
+          <button id="btn-load-more-${containerId}" class="btn-secondary" style="padding:12px 32px;font-size:0.92rem;border-radius:var(--radius-md);cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+            <span>Load More Products</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+        ` : ""}
+      </div>
+    `;
+
+    if (hasMore) {
+      const loadMoreBtn = document.getElementById(`btn-load-more-${containerId}`);
+      if (loadMoreBtn) {
+        loadMoreBtn.addEventListener("click", loadNextPage);
+      }
+    }
+  }
+
+  async function loadInitialPage() {
+    currentPage = 0;
+    loadedProductsCount = 0;
     showSkeletonGrid(containerId, 8);
-    const options = {};
+    if (paginationWrapper) paginationWrapper.innerHTML = "";
+
+    const options = { page: 0 };
     if (currentCategory !== "all") options.category = currentCategory;
     if (currentSearch.trim()) options.search = currentSearch.trim();
 
-    const products = await fetchProducts(options);
-    renderProducts(products, containerId);
+    const result = (typeof fetchProductsPaginated === "function")
+      ? await fetchProductsPaginated(options)
+      : { products: await fetchProducts(options), totalCount: 0, hasMore: false };
+
+    renderProducts(result.products, containerId, false);
+    totalMatchingCount = result.totalCount;
+    loadedProductsCount = result.products.length;
+
+    updatePaginationUI(result.hasMore);
+  }
+
+  async function loadNextPage() {
+    const loadMoreBtn = document.getElementById(`btn-load-more-${containerId}`);
+    if (loadMoreBtn) {
+      loadMoreBtn.disabled = true;
+      loadMoreBtn.innerHTML = `<span>Loading…</span>`;
+    }
+
+    currentPage += 1;
+    const options = { page: currentPage };
+    if (currentCategory !== "all") options.category = currentCategory;
+    if (currentSearch.trim()) options.search = currentSearch.trim();
+
+    const result = (typeof fetchProductsPaginated === "function")
+      ? await fetchProductsPaginated(options)
+      : { products: await fetchProducts(options), totalCount: totalMatchingCount, hasMore: false };
+
+    renderProducts(result.products, containerId, true);
+    loadedProductsCount += result.products.length;
+
+    updatePaginationUI(result.hasMore);
   }
 
   function applyFilter(cat) {
@@ -167,7 +262,7 @@ async function initPageProducts(containerId, defaultCategory = "all") {
     const activeTab = document.querySelector(`.filter-tab[data-cat="${cat}"]`);
     if (activeTab) activeTab.classList.add("active");
     currentCategory = cat;
-    applyFilterAndSearch();
+    loadInitialPage();
   }
 
   tabs.forEach(tab => tab.addEventListener("click", () => applyFilter(tab.dataset.cat)));
@@ -177,7 +272,7 @@ async function initPageProducts(containerId, defaultCategory = "all") {
     searchInput.addEventListener("input", e => {
       clearTimeout(debounceTimer);
       currentSearch = e.target.value;
-      debounceTimer = setTimeout(applyFilterAndSearch, 300);
+      debounceTimer = setTimeout(loadInitialPage, 300);
     });
   }
 
@@ -191,7 +286,7 @@ async function renderFeatured(containerId, count = 4) {
   showSkeletonGrid(containerId, count);
   const products = await fetchProducts({ featuredOnly: true });
   const fallback = products.length === 0 ? DEFAULT_PRODUCTS.slice(0, count) : products.slice(0, count);
-  renderProducts(fallback, containerId);
+  renderProducts(fallback, containerId, false);
 }
 
 // ─── Shared UI: Hamburger, Navbar, Scroll Reveal ─────────────

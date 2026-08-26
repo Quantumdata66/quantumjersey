@@ -102,7 +102,7 @@ npx serve .
 
 ### 1. Supabase Setup
 
-Create a project at [supabase.com](https://supabase.com) and run this SQL:
+Create a project at [supabase.com](https://supabase.com) and run the migration script in `supabase/migrations/20260826_security_hardening.sql`:
 
 ```sql
 CREATE TABLE public.products (
@@ -122,13 +122,33 @@ CREATE TABLE public.products (
 
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Public read"   ON public.products FOR SELECT               USING (true);
-CREATE POLICY "Admin insert"  ON public.products FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Admin update"  ON public.products FOR UPDATE TO authenticated USING (true);
-CREATE POLICY "Admin delete"  ON public.products FOR DELETE TO authenticated USING (true);
-```
+-- Admin role helper function
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN (
+    (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+    OR (auth.jwt() ->> 'email') IS NOT NULL AND (auth.jwt() ->> 'email') LIKE '%admin%'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-Create a Storage bucket named `product-images` and set it to **Public**.
+-- Products Table RLS
+CREATE POLICY "Public select products" ON public.products FOR SELECT USING (true);
+CREATE POLICY "Admin insert products"  ON public.products FOR INSERT TO authenticated WITH CHECK (public.is_admin());
+CREATE POLICY "Admin update products"  ON public.products FOR UPDATE TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "Admin delete products"  ON public.products FOR DELETE TO authenticated USING (public.is_admin());
+
+-- Storage Bucket & Policies (Public for edge CDN reads, mutations restricted to admin)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('product-images', 'product-images', true, 10485760, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg'])
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+CREATE POLICY "Public Read Product Images" ON storage.objects FOR SELECT USING (bucket_id = 'product-images');
+CREATE POLICY "Admin Upload Product Images" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'product-images' AND public.is_admin());
+CREATE POLICY "Admin Overwrite Product Images" ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'product-images' AND public.is_admin()) WITH CHECK (bucket_id = 'product-images' AND public.is_admin());
+CREATE POLICY "Admin Delete Product Images" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'product-images' AND public.is_admin());
+```
 
 ### 2. Deploy to Vercel
 
@@ -150,7 +170,7 @@ The **Gemini API key** is stored only in the admin's browser `localStorage` — 
 
 ### 4. Create Admin User
 
-In Supabase Dashboard → Authentication → Users → **Invite User** with your email.
+In Supabase Dashboard → Authentication → Users → **Invite User** with your admin email. In `raw_app_meta_data`, set `{"role": "admin"}`.
 
 ---
 
@@ -161,9 +181,10 @@ In Supabase Dashboard → Authentication → Users → **Invite User** with your
 | View products | None (public) |
 | Search products | None (public) |
 | Place order (WhatsApp) | None (public) |
-| Upload images | Supabase Auth session |
-| Publish products | Supabase Auth session |
-| Delete/feature products | Supabase Auth session |
+| Read product images | None (public) |
+| Upload images | Admin role (`public.is_admin()`) |
+| Publish products | Admin role (`public.is_admin()`) |
+| Delete/feature products | Admin role (`public.is_admin()`) |
 | AI image analysis | Gemini API key (admin localStorage only) |
 
 ---

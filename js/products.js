@@ -184,26 +184,64 @@ const DEFAULT_PRODUCTS = [
   }
 ];
 
-// ─── Synchronous fallback (for WhatsApp link updates from render.js) ─────────
-// A cached copy of the last loaded products, used by event listeners.
-let _productCache = [...DEFAULT_PRODUCTS];
+// ─── Stable Product Registry (eliminates cache desync across multi-grid/search renders) ───
+const _productRegistry = new Map();
 
+/**
+ * Register a single product or array of products into the permanent lookup registry.
+ */
+function registerProducts(products) {
+  if (!products) return;
+  const list = Array.isArray(products) ? products : [products];
+  list.forEach(p => {
+    if (p && p.id) {
+      _productRegistry.set(p.id, p);
+    }
+  });
+}
+
+// Pre-populate registry with default static products
+registerProducts(DEFAULT_PRODUCTS);
+
+/**
+ * Retrieve a product by ID from the permanent registry (with fallback to DEFAULT_PRODUCTS).
+ */
+function getProductById(id) {
+  if (!id) return null;
+  if (_productRegistry.has(id)) {
+    return _productRegistry.get(id);
+  }
+  const fallback = DEFAULT_PRODUCTS.find(p => p.id === id);
+  if (fallback) {
+    _productRegistry.set(fallback.id, fallback);
+    return fallback;
+  }
+  return null;
+}
+
+// ─── Synchronous fallback (backwards compatibility) ─────────
 function getProductsSync() {
-  return _productCache;
+  return Array.from(_productRegistry.values());
 }
 
 // ─── Utility ─────────────────────────────────────────────────
 
 function formatPrice(price) {
+  if (typeof price !== "number") price = parseInt(price, 10) || 0;
   return "₦" + price.toLocaleString("en-NG");
 }
 
 function buildWhatsAppLink(product, size) {
+  if (!product) return `https://wa.me/${WHATSAPP_NUMBER}`;
+  
+  const productName = product.name || product.product_name || "Football Gear";
+  const productPrice = typeof product.price === "number" ? product.price : (parseInt(product.price, 10) || 0);
+
   const msg = encodeURIComponent(
     `Hello Quantum Jersey! 👋\n\nI'd like to order:\n\n` +
-    `🛍️ *${product.name}*\n` +
+    `🛍️ *${productName}*\n` +
     `📏 Size: *${size || "Please advise"}*\n` +
-    `💰 Price: *${formatPrice(product.price)}*\n` +
+    `💰 Price: *${formatPrice(productPrice)}*\n` +
     `📍 Delivery Location: [Enter State/City, e.g. Lagos, Kaduna]\n\n` +
     `Please confirm availability and delivery details. Thank you!`
   );

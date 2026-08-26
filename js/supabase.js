@@ -56,23 +56,42 @@ async function getAdminSession() {
 
 // ─── Supabase Storage ────────────────────────────────────────
 
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB limit
+
 /**
  * Upload a product image file to Supabase Storage.
- * Returns the public URL of the uploaded image.
+ * Validates MIME type and file size, then returns public URL.
  */
 async function uploadProductImage(file, session) {
+  if (!file || !file.name) {
+    throw new Error("Invalid file provided for upload.");
+  }
+
+  // Enforce MIME type validation
+  const mimeType = (file.type || "").toLowerCase();
+  if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+    throw new Error("Invalid image format. Only JPG, PNG, and WEBP images are allowed.");
+  }
+
+  // Enforce 10 MB size limit
+  if (file.size > MAX_IMAGE_BYTES) {
+    throw new Error("Image file exceeds the 10 MB maximum size limit.");
+  }
+
   const client = getSupabaseClient();
   if (!client || !session) throw new Error("Not authenticated or Supabase not configured.");
 
-  const ext = file.name.split(".").pop().toLowerCase();
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const rawExt = file.name.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const ext = ["jpg", "jpeg", "png", "webp"].includes(rawExt) ? rawExt : "jpg";
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
 
   const { data, error } = await client.storage
     .from(STORAGE_BUCKET)
     .upload(filename, file, {
       cacheControl: "3600",
       upsert: false,
-      contentType: file.type,
+      contentType: mimeType,
     });
 
   if (error) throw new Error(`Image upload failed: ${error.message}`);
@@ -82,6 +101,45 @@ async function uploadProductImage(file, session) {
     .getPublicUrl(data.path);
 
   return urlData.publicUrl;
+}
+
+/**
+ * Delete a product image from Supabase Storage by its full public URL.
+ * Safely parses the object path within the product-images bucket.
+ */
+async function deleteStorageImageByUrl(imageUrl, session) {
+  if (!imageUrl || typeof imageUrl !== "string") return { success: true, skipped: true };
+
+  // Only attempt storage deletion if image URL points to the Supabase product-images bucket
+  if (!imageUrl.includes(`/${STORAGE_BUCKET}/`)) {
+    return { success: true, skipped: true, reason: "Not a Supabase Storage URL" };
+  }
+
+  const client = getSupabaseClient();
+  if (!client || !session) return { success: false, error: "Not authenticated or Supabase not configured." };
+
+  try {
+    // Extract filename from URL (e.g. /product-images/1783554996541-eij4g3q6agm.jpeg)
+    const urlParts = imageUrl.split(`/${STORAGE_BUCKET}/`);
+    if (urlParts.length < 2) return { success: true, skipped: true };
+
+    const objectPath = decodeURIComponent(urlParts[1].split("?")[0].trim());
+    if (!objectPath) return { success: true, skipped: true };
+
+    const { error } = await client.storage
+      .from(STORAGE_BUCKET)
+      .remove([objectPath]);
+
+    if (error) {
+      console.warn(`[QJ Storage] Failed to delete image "${objectPath}":`, error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, deletedPath: objectPath };
+  } catch (err) {
+    console.warn(`[QJ Storage] Error during image deletion:`, err.message);
+    return { success: false, error: err.message };
+  }
 }
 
 // ─── Supabase Database Operations ───────────────────────────
@@ -106,20 +164,37 @@ function normaliseProduct(row) {
 }
 
 /**
- * Fetch all products from Supabase with optional filters.
- * Falls back to DEFAULT_PRODUCTS if Supabase is not configured.
+ * Fetch products with pagination metadata and total count matching filters.
  */
-async function fetchProducts({ category = null, featuredOnly = false, search = null, page = 0 } = {}) {
+async function fetchProductsPaginated({ category = null, featuredOnly = false, search = null, page = 0, pageSize = PAGE_SIZE } = {}) {
   const client = getSupabaseClient();
-  if (!client) return DEFAULT_PRODUCTS;
+  if (!client) {
+    let filtered = [...DEFAULT_PRODUCTS];
+    if (category) filtered = filtered.filter(p => p.category === category);
+    if (featuredOnly) filtered = filtered.filter(p => p.featured);
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(p => (p.name || "").toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q));
+    }
+    const totalCount = filtered.length;
+    const from = page * pageSize;
+    const pageProducts = filtered.slice(from, from + pageSize);
+    if (typeof registerProducts === "function") registerProducts(pageProducts);
+    return {
+      products: pageProducts,
+      totalCount,
+      hasMore: from + pageSize < totalCount,
+      page,
+    };
+  }
 
   try {
     let query = client
       .from("products")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("in_stock", true)
       .order("created_at", { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      .range(page * pageSize, (page + 1) * pageSize - 1);
 
     if (category) query = query.eq("category", category);
     if (featuredOnly) query = query.eq("featured", true);
@@ -129,13 +204,43 @@ async function fetchProducts({ category = null, featuredOnly = false, search = n
       );
     }
 
-    const { data, error } = await query;
+    const { data, count, error } = await query;
     if (error) throw error;
-    return data.map(normaliseProduct);
+
+    const normalised = (data || []).map(normaliseProduct);
+    if (typeof registerProducts === "function") {
+      registerProducts(normalised);
+    }
+
+    const totalCount = typeof count === "number" ? count : normalised.length;
+    const from = page * pageSize;
+    const hasMore = from + pageSize < totalCount;
+
+    return {
+      products: normalised,
+      totalCount,
+      hasMore,
+      page,
+    };
   } catch (err) {
     console.error("[QJ] Supabase fetch error:", err.message);
-    return DEFAULT_PRODUCTS;
+    const fallback = DEFAULT_PRODUCTS.slice(page * pageSize, (page + 1) * pageSize);
+    if (typeof registerProducts === "function") registerProducts(fallback);
+    return {
+      products: fallback,
+      totalCount: DEFAULT_PRODUCTS.length,
+      hasMore: (page + 1) * pageSize < DEFAULT_PRODUCTS.length,
+      page,
+    };
   }
+}
+
+/**
+ * Fetch all products from Supabase with optional filters (backwards compatible).
+ */
+async function fetchProducts({ category = null, featuredOnly = false, search = null, page = 0 } = {}) {
+  const result = await fetchProductsPaginated({ category, featuredOnly, search, page, pageSize: PAGE_SIZE });
+  return result.products;
 }
 
 /**
