@@ -126,9 +126,9 @@ ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
-  RETURN (
-    (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
-    OR (auth.jwt() ->> 'email') IS NOT NULL AND (auth.jwt() ->> 'email') LIKE '%admin%'
+  RETURN COALESCE(
+    (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin',
+    false
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

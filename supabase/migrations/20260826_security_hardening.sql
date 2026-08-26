@@ -9,26 +9,17 @@
 -- 3. Hardens storage.objects RLS policies for the 'product-images' bucket (SELECT: public, mutations: admin only).
 -- ============================================================
 
--- ─── 1. Admin Helper Function ─────────────────────────────────
--- Checks if the calling user has the 'admin' role in auth.users.raw_app_meta_data
--- or matches an authorized admin email.
+-- ─── 1. Admin Role Helper Function ───────────────────────────
+-- Strictly checks if the authenticated user has the 'admin' role
+-- inside their JWT app_metadata (auth.jwt() -> 'app_metadata' ->> 'role').
+-- No email pattern matching or substring fallbacks.
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
-  -- Check JWT app_metadata for role: 'admin'
-  IF (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin' THEN
-    RETURN TRUE;
-  END IF;
-
-  -- Check authenticated email fallback
-  IF (auth.jwt() ->> 'email') IS NOT NULL AND (
-    (auth.jwt() ->> 'email') LIKE '%admin%' -- customize as needed
-    OR (auth.jwt() ->> 'email') = 'quantumjerseyadmin@gmail.com'
-  ) THEN
-    RETURN TRUE;
-  END IF;
-
-  RETURN FALSE;
+  RETURN COALESCE(
+    (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin',
+    false
+  );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
