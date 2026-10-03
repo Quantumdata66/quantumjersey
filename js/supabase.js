@@ -398,18 +398,16 @@ async function createOrder(orderData) {
   }
 
   try {
-    const { data, error } = await client
+    const { error } = await client
       .from("orders")
-      .insert([preparedPayload])
-      .select()
-      .single();
+      .insert([preparedPayload]);
 
     if (error) {
       console.error("[QJ Orders] Supabase insert order error:", error.message);
       return { data: preparedPayload, error, orderRef };
     }
 
-    return { data, error: null, orderRef: data.order_ref };
+    return { data: preparedPayload, error: null, orderRef };
   } catch (err) {
     console.error("[QJ Orders] Unexpected error during order creation:", err.message);
     return { data: preparedPayload, error: err, orderRef };
@@ -596,11 +594,9 @@ async function submitReview({ productId, rating, reviewText, customerName, order
   }
 
   try {
-    const { data, error } = await client
+    const { error } = await client
       .from("reviews")
-      .insert([payload])
-      .select()
-      .single();
+      .insert([payload]);
 
     if (error) {
       if (error.code === "23505") {
@@ -609,7 +605,7 @@ async function submitReview({ productId, rating, reviewText, customerName, order
       throw error;
     }
 
-    return { success: true, data, message: "Thank you! Your review has been submitted for moderation." };
+    return { success: true, data: payload, message: "Thank you! Your review has been submitted for moderation." };
   } catch (err) {
     console.error("[QJ Reviews] submitReview error:", err.message);
     throw new Error(err.message || "Failed to submit review. Please try again.");
