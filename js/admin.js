@@ -80,13 +80,26 @@ async function loadDashboard() {
   document.getElementById("dash-content").style.display = "none";
 
   try {
-    const stats = await fetchDashboardStats();
+    const stats = await fetchDashboardStats(_adminSession);
 
     // ── Stat cards
-    animateCount("stat-total",    stats.total);
+    animateCount("stat-total", stats.total);
     animateCount("stat-featured", stats.featured);
-    animateCount("stat-files",    stats.storageFiles);
+    animateCount("stat-files", stats.storageFiles);
+    animateCount("stat-orders", stats.ordersCount || 0);
+    animateCount("stat-awaiting-orders", stats.awaitingOrdersCount || 0);
     document.getElementById("stat-storage").textContent = formatBytes(stats.storageBytes);
+
+    // Update sidebar badge for pending orders
+    const badge = document.getElementById("nav-orders-count-badge");
+    if (badge) {
+      if (stats.awaitingOrdersCount > 0) {
+        badge.textContent = stats.awaitingOrdersCount;
+        badge.style.display = "inline-flex";
+      } else {
+        badge.style.display = "none";
+      }
+    }
 
     // ── Category bars
     const maxCat = Math.max(
@@ -95,18 +108,21 @@ async function loadDashboard() {
       stats.byCategory.sportswear,
       1 // avoid div by 0
     );
-    setCategoryBar("boots",      stats.byCategory.boots,      maxCat);
-    setCategoryBar("jerseys",    stats.byCategory.jerseys,    maxCat);
+    setCategoryBar("boots", stats.byCategory.boots, maxCat);
+    setCategoryBar("jerseys", stats.byCategory.jerseys, maxCat);
     setCategoryBar("sportswear", stats.byCategory.sportswear, maxCat);
 
     // ── Storage bar (out of 1 GB free tier)
     const ONE_GB = 1024 * 1024 * 1024;
-    const pct    = Math.min((stats.storageBytes / ONE_GB) * 100, 100).toFixed(1);
+    const pct = Math.min((stats.storageBytes / ONE_GB) * 100, 100).toFixed(1);
     requestAnimationFrame(() => {
       document.getElementById("storage-bar").style.width = pct + "%";
     });
-    document.getElementById("storage-used-label").textContent  = formatBytes(stats.storageBytes) + " used";
+    document.getElementById("storage-used-label").textContent = formatBytes(stats.storageBytes) + " used";
     document.getElementById("storage-files-label").textContent = `${stats.storageFiles} file${stats.storageFiles !== 1 ? "s" : ""}`;
+
+    // ── Recent orders on dashboard
+    renderRecentOrdersGrid(stats.recentOrders || []);
 
     // ── Recent uploads grid
     renderRecentGrid(stats.recentUploads);
@@ -122,10 +138,10 @@ async function loadDashboard() {
 }
 
 function animateCount(id, target) {
-  const el    = document.getElementById(id);
+  const el = document.getElementById(id);
   if (!el) return;
   const start = 0;
-  const dur   = 700;
+  const dur = 700;
   const begin = performance.now();
   function tick(now) {
     const p = Math.min((now - begin) / dur, 1);
@@ -170,7 +186,443 @@ function renderRecentGrid(products) {
   `).join("");
 }
 
+function renderRecentOrdersGrid(orders) {
+  const container = document.getElementById("dash-recent-orders");
+  if (!container) return;
+  if (!orders || orders.length === 0) {
+    container.innerHTML = `<div class="admin-empty" style="background:var(--bg-surface-1);border:1px solid var(--border);border-radius:var(--radius-md);padding:24px;">No customer orders recorded yet.</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div style="background:var(--bg-surface-1);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;">
+      ${orders.map(o => `
+        <div class="admin-order-row" onclick="openAdminOrderDetail('${o.id || o.order_ref}')" style="cursor:pointer;">
+          <div class="admin-order-main">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <strong style="color:var(--text-primary);font-size:0.92rem;">${o.order_ref}</strong>
+              <span class="status-badge status-${o.status}">${getStatusLabel(o.status)}</span>
+            </div>
+            <p style="font-size:0.8rem;color:var(--text-secondary);margin:3px 0 0;">
+              👤 ${o.customer_name} (${o.customer_phone}) · 📍 ${o.delivery_city}, ${o.delivery_state}
+            </p>
+          </div>
+          <div class="admin-order-meta">
+            <strong style="color:var(--accent-green);font-size:0.95rem;">${formatPrice(o.total_amount || o.subtotal)}</strong>
+            <span style="font-size:0.75rem;color:var(--text-muted);">${formatOrderDate(o.created_at)}</span>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+// ─── Order Management (Task 4) ───────────────────────────────
+
+let _currentOrdersStatus = "all";
+let _currentOrdersSearch = "";
+let _currentOrdersPage = 0;
+let _adminOrdersCache = [];
+
+function getStatusLabel(status) {
+  const labels = {
+    awaiting_confirmation: "⏳ Awaiting Confirmation",
+    confirmed: "🔵 Confirmed",
+    processing: "🟣 Processing",
+    dispatched: "🚚 Dispatched",
+    delivered: "🟢 Delivered",
+    cancelled: "🔴 Cancelled",
+  };
+  return labels[status] || status;
+}
+
+function formatOrderDate(dateString) {
+  if (!dateString) return "Recently";
+  try {
+    const d = new Date(dateString);
+    return d.toLocaleString("en-NG", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch (_) {
+    return dateString;
+  }
+}
+
+async function loadAdminOrders() {
+  const list = document.getElementById("admin-orders-list");
+  const pagination = document.getElementById("admin-orders-pagination");
+  if (!list) return;
+
+  list.innerHTML = `<p class="admin-empty">Loading orders…</p>`;
+
+  try {
+    const result = await fetchOrders({
+      status: _currentOrdersStatus,
+      search: _currentOrdersSearch,
+      page: _currentOrdersPage,
+      pageSize: 25,
+    }, _adminSession);
+
+    _adminOrdersCache = result.orders || [];
+
+    // Update pending badge
+    const awaitingCount = _adminOrdersCache.filter(o => o.status === "awaiting_confirmation").length;
+    const badge = document.getElementById("nav-orders-count-badge");
+    if (badge) {
+      if (awaitingCount > 0) {
+        badge.textContent = awaitingCount;
+        badge.style.display = "inline-flex";
+      } else {
+        badge.style.display = "none";
+      }
+    }
+
+    renderAdminOrdersList(_adminOrdersCache, result.totalCount);
+
+  } catch (err) {
+    list.innerHTML = `<p class="admin-empty" style="color:#f87171">Error loading orders: ${err.message}</p>`;
+  }
+}
+
+function renderAdminOrdersList(orders, totalCount) {
+  const list = document.getElementById("admin-orders-list");
+  if (!list) return;
+
+  if (orders.length === 0) {
+    list.innerHTML = `<p class="admin-empty">No orders found matching this filter.</p>`;
+    return;
+  }
+
+  list.innerHTML = orders.map(order => {
+    const items = Array.isArray(order.items) ? order.items : [];
+    const itemsSummary = items.map(i => `${i.quantity}x ${i.name} (${i.size || "Standard"})`).join(", ");
+
+    return `
+      <div class="admin-order-card" id="order-card-${order.id || order.order_ref}">
+        <div class="admin-order-card-header">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <strong class="order-ref-text">${order.order_ref}</strong>
+            <span class="status-badge status-${order.status}">${getStatusLabel(order.status)}</span>
+            <span class="order-time-text">📅 ${formatOrderDate(order.created_at)}</span>
+          </div>
+          <div class="order-total-price">
+            ${formatPrice(order.total_amount || order.subtotal)}
+          </div>
+        </div>
+
+        <div class="admin-order-card-body">
+          <div class="order-customer-snippet">
+            <span class="cust-name">👤 <strong>${order.customer_name}</strong></span>
+            <span class="cust-phone">📞 <a href="tel:${order.customer_phone}" style="color:var(--text-primary);text-decoration:underline;">${order.customer_phone}</a></span>
+            <span class="cust-location">📍 ${order.delivery_address}, ${order.delivery_city}, ${order.delivery_state}</span>
+          </div>
+
+          <div class="order-items-snippet">
+            <span class="items-count-badge">🛍️ ${items.length} item${items.length !== 1 ? "s" : ""}:</span>
+            <span class="items-text">${itemsSummary || "No item details recorded"}</span>
+          </div>
+
+          ${order.delivery_notes ? `
+            <div class="order-notes-snippet">
+              💬 <em>Notes: ${order.delivery_notes}</em>
+            </div>
+          ` : ""}
+        </div>
+
+        <div class="admin-order-card-actions">
+          <button class="btn-admin-order-view" onclick="openAdminOrderDetail('${order.id || order.order_ref}')">
+            🔍 View Full Details & Status
+          </button>
+          <a href="https://wa.me/${(order.customer_phone || '').replace(/[^0-9]/g, '')}?text=${encodeURIComponent('Hello ' + order.customer_name + '! This is Quantum Jersey regarding your order ' + order.order_ref + '.')}"
+             target="_blank" rel="noopener noreferrer" class="btn-admin-order-wa">
+            💬 WhatsApp Customer
+          </a>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function filterOrdersByStatus(status) {
+  _currentOrdersStatus = status;
+  _currentOrdersPage = 0;
+
+  // Update pills
+  const pills = document.querySelectorAll("#order-status-filters .admin-pill");
+  pills.forEach(p => {
+    p.classList.toggle("active", p.dataset.status === status);
+  });
+
+  loadAdminOrders();
+}
+
+// Search input listener
+document.addEventListener("DOMContentLoaded", () => {
+  const searchInput = document.getElementById("orders-search");
+  if (searchInput) {
+    let debounce;
+    searchInput.addEventListener("input", e => {
+      clearTimeout(debounce);
+      _currentOrdersSearch = e.target.value;
+      debounce = setTimeout(() => {
+        _currentOrdersPage = 0;
+        loadAdminOrders();
+      }, 300);
+    });
+  }
+});
+
+// ─── Order Details Modal (Task 4) ────────────────────────────
+
+async function openAdminOrderDetail(orderIdOrRef) {
+  let order = _adminOrdersCache.find(o => o.id === orderIdOrRef || o.order_ref === orderIdOrRef);
+
+  if (!order && typeof fetchOrderById === "function") {
+    order = await fetchOrderById(orderIdOrRef, _adminSession);
+  }
+
+  if (!order) {
+    showMsg("Could not load order details.", "error");
+    return;
+  }
+
+  const modal = document.getElementById("admin-order-detail-modal");
+  const refEl = document.getElementById("modal-order-ref");
+  const dateEl = document.getElementById("modal-order-date");
+  const contentEl = document.getElementById("modal-order-content");
+
+  if (refEl) refEl.textContent = `Order ${order.order_ref}`;
+  if (dateEl) dateEl.textContent = `Created: ${new Date(order.created_at).toLocaleString("en-NG")}`;
+
+  const items = Array.isArray(order.items) ? order.items : [];
+  const cleanPhone = (order.customer_phone || "").replace(/[^0-9]/g, "");
+  const waMsg = encodeURIComponent(`Hello ${order.customer_name}! This is Quantum Jersey regarding your order ${order.order_ref}.`);
+
+  if (contentEl) {
+    contentEl.innerHTML = `
+      <!-- Customer & Delivery info -->
+      <div class="admin-modal-section" style="background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:18px;margin-bottom:18px;">
+        <h4 style="font-size:0.9rem;margin-bottom:10px;color:var(--accent-green);">👤 Customer & Delivery Information</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.86rem;">
+          <div><strong>Customer Name:</strong> ${order.customer_name}</div>
+          <div>
+            <strong>Phone:</strong> <a href="tel:${order.customer_phone}" style="color:var(--accent-green);">${order.customer_phone}</a>
+          </div>
+          <div><strong>State / City:</strong> ${order.delivery_city}, ${order.delivery_state}</div>
+          <div><strong>Address:</strong> ${order.delivery_address}</div>
+          ${order.delivery_notes ? `<div style="grid-column:1/-1;"><strong>Notes:</strong> <em>${order.delivery_notes}</em></div>` : ""}
+        </div>
+        <div style="margin-top:14px;">
+          <a href="https://wa.me/${cleanPhone}?text=${waMsg}" target="_blank" rel="noopener noreferrer"
+             class="quick-action-btn primary" style="display:inline-flex;width:fit-content;text-decoration:none;">
+            💬 Open Direct WhatsApp Chat With Customer
+          </a>
+        </div>
+      </div>
+
+      <!-- Items Table -->
+      <div class="admin-modal-section" style="margin-bottom:18px;">
+        <h4 style="font-size:0.9rem;margin-bottom:10px;color:var(--text-secondary);">🛍️ Order Items (${items.length})</h4>
+        <div style="border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;">
+          <table style="width:100%;border-collapse:collapse;font-size:0.84rem;text-align:left;">
+            <thead>
+              <tr style="background:var(--bg-surface-2);border-bottom:1px solid var(--border);color:var(--text-muted);">
+                <th style="padding:10px 12px;">Item</th>
+                <th style="padding:10px 12px;">Size</th>
+                <th style="padding:10px 12px;">Qty</th>
+                <th style="padding:10px 12px;">Unit Price</th>
+                <th style="padding:10px 12px;text-align:right;">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map(item => `
+                <tr style="border-bottom:1px solid var(--border);">
+                  <td style="padding:10px 12px;display:flex;align-items:center;gap:10px;">
+                    <img src="${item.image || 'assets/images/boots_product.webp'}" alt="${item.name}"
+                         style="width:36px;height:36px;object-fit:cover;border-radius:4px;"/>
+                    <strong>${item.name}</strong>
+                  </td>
+                  <td style="padding:10px 12px;"><span class="admin-cat-tag">${item.size || "Standard"}</span></td>
+                  <td style="padding:10px 12px;">${item.quantity}</td>
+                  <td style="padding:10px 12px;">${formatPrice(item.price)}</td>
+                  <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--text-primary);">${formatPrice((item.price || 0) * (item.quantity || 1))}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Financial Breakdown -->
+      <div style="background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 18px;margin-bottom:20px;font-size:0.88rem;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="color:var(--text-secondary);">Items Subtotal:</span>
+          <strong>${formatPrice(order.subtotal)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="color:var(--text-secondary);">Delivery Fee:</span>
+          <strong>${order.delivery_fee === 0 ? '<span style="color:var(--accent-green)">FREE</span>' : formatPrice(order.delivery_fee)}</strong>
+        </div>
+        <div style="height:1px;background:var(--border);margin:8px 0;"></div>
+        <div style="display:flex;justify-content:space-between;font-size:1.05rem;">
+          <strong>Total Order Amount:</strong>
+          <strong style="color:var(--accent-green);">${formatPrice(order.total_amount || order.subtotal)}</strong>
+        </div>
+      </div>
+
+      <!-- Status Update Controls -->
+      <div style="background:var(--bg-surface-1);border:1px solid var(--border-accent);border-radius:var(--radius-md);padding:18px;">
+        <label for="modal-order-status-select" style="display:block;font-size:0.84rem;font-weight:700;color:var(--text-primary);margin-bottom:8px;">
+          Update Order Status:
+        </label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <select id="modal-order-status-select" style="flex:1;min-width:200px;padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-surface-2);color:var(--text-primary);font-size:0.88rem;outline:none;">
+            <option value="awaiting_confirmation" ${order.status === "awaiting_confirmation" ? "selected" : ""}>⏳ Awaiting Confirmation</option>
+            <option value="confirmed" ${order.status === "confirmed" ? "selected" : ""}>🔵 Confirmed</option>
+            <option value="processing" ${order.status === "processing" ? "selected" : ""}>🟣 Processing</option>
+            <option value="dispatched" ${order.status === "dispatched" ? "selected" : ""}>🚚 Dispatched</option>
+            <option value="delivered" ${order.status === "delivered" ? "selected" : ""}>🟢 Delivered</option>
+            <option value="cancelled" ${order.status === "cancelled" ? "selected" : ""}>🔴 Cancelled</option>
+          </select>
+          <button type="button" id="btn-save-order-status" class="btn-primary" style="padding:10px 20px;font-size:0.86rem;"
+                  onclick="handleSaveOrderStatus('${order.id}')">
+            Save Status
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  if (modal) {
+    modal.style.display = "flex";
+    document.body.style.overflow = "hidden";
+  }
+}
+
+function closeAdminOrderDetail() {
+  const modal = document.getElementById("admin-order-detail-modal");
+  if (modal) {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  }
+}
+
+function handleAdminOrderModalBackdrop(event) {
+  if (event.target.id === "admin-order-detail-modal") {
+    closeAdminOrderDetail();
+  }
+}
+
+async function handleSaveOrderStatus(orderId) {
+  const select = document.getElementById("modal-order-status-select");
+  const btn = document.getElementById("btn-save-order-status");
+  if (!select) return;
+
+  const newStatus = select.value;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+  }
+
+  try {
+    if (typeof updateOrderStatus === "function") {
+      await updateOrderStatus(orderId, newStatus, _adminSession);
+      showMsg(`✅ Order status updated to "${getStatusLabel(newStatus)}"`, "success");
+      closeAdminOrderDetail();
+      loadAdminOrders();
+      loadDashboard();
+    }
+  } catch (err) {
+    showMsg(`❌ Failed to update status: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Save Status";
+    }
+  }
+}
+
+// ─── Customer Reviews Moderation (Task 5) ─────────────────────
+
+async function loadAdminReviews() {
+  const container = document.getElementById("admin-reviews-list");
+  if (!container) return;
+  container.innerHTML = `<p class="admin-empty">Loading reviews…</p>`;
+
+  const client = getSupabaseClient();
+  if (!client || !_adminSession) {
+    container.innerHTML = `<div class="admin-empty">Reviews will appear here when submitted by customers.</div>`;
+    return;
+  }
+
+  try {
+    const { data, error } = await client
+      .from("reviews")
+      .select("*, products(product_name)")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      container.innerHTML = `<p class="admin-empty">No reviews submitted yet.</p>`;
+      return;
+    }
+
+    container.innerHTML = data.map(rev => `
+      <div class="admin-product-row" style="align-items:flex-start;">
+        <div class="admin-product-info">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <strong>${rev.customer_name}</strong>
+            <span class="status-badge status-${rev.status}">${rev.status.toUpperCase()}</span>
+            <span style="color:var(--accent-gold);">★ ${rev.rating}.0</span>
+          </div>
+          <p style="font-size:0.86rem;color:var(--text-primary);margin:4px 0;">"${rev.review_text}"</p>
+          <span style="font-size:0.75rem;color:var(--text-muted);">
+            Product: <strong>${rev.products?.product_name || rev.product_id}</strong> · Order: ${rev.order_ref || "None"}
+          </span>
+        </div>
+        <div class="admin-row-actions">
+          ${rev.status !== "approved" ? `
+            <button class="btn-admin-feature" onclick="handleModerateReview('${rev.id}', 'approved')">
+              ✓ Approve
+            </button>
+          ` : ""}
+          ${rev.status !== "rejected" ? `
+            <button class="btn-admin-delete" onclick="handleModerateReview('${rev.id}', 'rejected')">
+              ✕ Reject
+            </button>
+          ` : ""}
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    container.innerHTML = `<p class="admin-empty" style="color:#f87171">Error loading reviews: ${err.message}</p>`;
+  }
+}
+
+async function handleModerateReview(reviewId, newStatus) {
+  const client = getSupabaseClient();
+  if (!client || !_adminSession) return;
+
+  try {
+    const { error } = await client
+      .from("reviews")
+      .update({ status: newStatus })
+      .eq("id", reviewId);
+
+    if (error) throw error;
+    showMsg(`✅ Review ${newStatus}!`, "success");
+    loadAdminReviews();
+  } catch (err) {
+    showMsg(`❌ Error: ${err.message}`, "error");
+  }
+}
+
 // ─── Settings ────────────────────────────────────────────────
+
 
 function loadSettings() {
   const key    = localStorage.getItem("qj_gemini_key") || "";

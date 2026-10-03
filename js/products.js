@@ -231,19 +231,83 @@ function formatPrice(price) {
   return "₦" + price.toLocaleString("en-NG");
 }
 
+/**
+ * Returns full absolute or canonical product link for WhatsApp messages and sharing.
+ */
+function buildProductUrl(productId) {
+  if (typeof window !== "undefined" && window.location) {
+    const origin = window.location.origin;
+    return `${origin}/product.html?id=${encodeURIComponent(productId)}`;
+  }
+  return `https://quantum-jersey.vercel.app/product.html?id=${encodeURIComponent(productId)}`;
+}
+
+/**
+ * Builds single-item WhatsApp link for fast quick-ordering from cards.
+ */
 function buildWhatsAppLink(product, size) {
   if (!product) return `https://wa.me/${WHATSAPP_NUMBER}`;
   
   const productName = product.name || product.product_name || "Football Gear";
   const productPrice = typeof product.price === "number" ? product.price : (parseInt(product.price, 10) || 0);
+  const prodUrl = buildProductUrl(product.id);
 
   const msg = encodeURIComponent(
     `Hello Quantum Jersey! 👋\n\nI'd like to order:\n\n` +
     `🛍️ *${productName}*\n` +
     `📏 Size: *${size || "Please advise"}*\n` +
     `💰 Price: *${formatPrice(productPrice)}*\n` +
+    `🔗 Product Link: ${prodUrl}\n` +
     `📍 Delivery Location: [Enter State/City, e.g. Lagos, Kaduna]\n\n` +
     `Please confirm availability and delivery details. Thank you!`
   );
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`;
 }
+
+/**
+ * Builds a complete, readable multi-item WhatsApp message for cart checkout.
+ * Accurately shows item details, sizes, quantities, subtotals, and delivery estimates.
+ */
+function buildMultiItemWhatsAppMessage(orderData, items) {
+  const orderRef = orderData.order_ref || "QJ-ORDER";
+  const customerName = orderData.customer_name || "Customer";
+  const customerPhone = orderData.customer_phone || "";
+  const address = orderData.delivery_address || "";
+  const cityState = `${orderData.delivery_city || ""}, ${orderData.delivery_state || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
+  const notes = orderData.delivery_notes ? `• Notes: ${orderData.delivery_notes}\n` : "";
+
+  let itemsText = "";
+  (items || []).forEach((item, index) => {
+    const itemSubtotal = (item.price || 0) * (item.quantity || 1);
+    const link = buildProductUrl(item.id);
+    itemsText += `\n${index + 1}. *${item.name}*\n` +
+                 `   • Size: *${item.size || "Standard"}*` + (item.color && item.color !== "Default" ? ` | Color: ${item.color}` : "") + `\n` +
+                 `   • Qty: ${item.quantity} × ${formatPrice(item.price)} = *${formatPrice(itemSubtotal)}*\n` +
+                 `   • Link: ${link}\n`;
+  });
+
+  const deliveryFeeLabel = orderData.delivery_fee === 0
+    ? "FREE (Promo: Lagos/Kaduna > ₦50,000)"
+    : (orderData.delivery_fee > 0 ? formatPrice(orderData.delivery_fee) : "To be confirmed");
+
+  const fullMessage =
+    `⚡ *NEW ORDER — Quantum Jersey*\n` +
+    `📋 *Order Ref:* ${orderRef}\n` +
+    `⏳ *Status:* Awaiting Confirmation\n\n` +
+    `👤 *Customer Details:*\n` +
+    `• Name: ${customerName}\n` +
+    `• Phone: ${customerPhone}\n` +
+    `• Address: ${address}\n` +
+    `• Location: ${cityState || "Nigeria"}\n` +
+    notes +
+    `\n🛍️ *Order Items (${(items || []).length} items):*` +
+    itemsText +
+    `\n💰 *Financial Summary:*\n` +
+    `• Items Subtotal: *${formatPrice(orderData.subtotal)}*\n` +
+    `• Estimated Delivery: *${deliveryFeeLabel}*\n` +
+    `• *Estimated Total: ${formatPrice(orderData.total_amount)}*\n\n` +
+    `_Note: Order record registered on website. Please confirm stock availability, delivery schedule, and payment details._`;
+
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(fullMessage)}`;
+}
+

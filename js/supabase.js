@@ -348,35 +348,306 @@ Respond ONLY with valid JSON, no markdown, no extra text.`;
   }
 }
 
+// ─── Orders Database Operations ─────────────────────────────
+
+/**
+ * Generate a clean, unique, memorable order reference.
+ * Example: QJ-202610-8429
+ */
+function generateOrderReference() {
+  const d = new Date();
+  const yearMonth = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  return `QJ-${yearMonth}-${randomSuffix}`;
+}
+
+/**
+ * Insert a new customer order into the database before redirecting to WhatsApp.
+ * Public users have INSERT-only permission via RLS.
+ */
+async function createOrder(orderData) {
+  const client = getSupabaseClient();
+  const orderRef = orderData.order_ref || generateOrderReference();
+
+  const preparedPayload = {
+    order_ref: orderRef,
+    customer_name: orderData.customer_name?.trim() || "Customer",
+    customer_phone: orderData.customer_phone?.trim() || "",
+    delivery_state: orderData.delivery_state?.trim() || "",
+    delivery_city: orderData.delivery_city?.trim() || "",
+    delivery_address: orderData.delivery_address?.trim() || "",
+    delivery_notes: orderData.delivery_notes?.trim() || "",
+    items: Array.isArray(orderData.items) ? orderData.items : [],
+    subtotal: parseInt(orderData.subtotal, 10) || 0,
+    delivery_fee: parseInt(orderData.delivery_fee, 10) || 0,
+    total_amount: parseInt(orderData.total_amount, 10) || 0,
+    status: "awaiting_confirmation",
+  };
+
+  if (!client) {
+    console.warn("[QJ Orders] Supabase not connected. Storing order locally in fallback mode.");
+    try {
+      const localOrders = JSON.parse(localStorage.getItem("qj_local_orders") || "[]");
+      const localRecord = { ...preparedPayload, id: "local-" + Date.now(), created_at: new Date().toISOString() };
+      localOrders.unshift(localRecord);
+      localStorage.setItem("qj_local_orders", JSON.stringify(localOrders.slice(0, 50)));
+      return { data: localRecord, error: null, orderRef };
+    } catch (_) {
+      return { data: preparedPayload, error: null, orderRef };
+    }
+  }
+
+  try {
+    const { data, error } = await client
+      .from("orders")
+      .insert([preparedPayload])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("[QJ Orders] Supabase insert order error:", error.message);
+      return { data: preparedPayload, error, orderRef };
+    }
+
+    return { data, error: null, orderRef: data.order_ref };
+  } catch (err) {
+    console.error("[QJ Orders] Unexpected error during order creation:", err.message);
+    return { data: preparedPayload, error: err, orderRef };
+  }
+}
+
+/**
+ * Fetch orders with status filtering, search, and pagination (Admin only).
+ */
+async function fetchOrders({ status = "all", search = null, page = 0, pageSize = 20 } = {}, session = null) {
+  const client = getSupabaseClient();
+  if (!client || !session) {
+    const local = JSON.parse(localStorage.getItem("qj_local_orders") || "[]");
+    let filtered = [...local];
+    if (status !== "all") filtered = filtered.filter(o => o.status === status);
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(o =>
+        (o.order_ref || "").toLowerCase().includes(q) ||
+        (o.customer_name || "").toLowerCase().includes(q) ||
+        (o.customer_phone || "").includes(q)
+      );
+    }
+    const from = page * pageSize;
+    return {
+      orders: filtered.slice(from, from + pageSize),
+      totalCount: filtered.length,
+      hasMore: from + pageSize < filtered.length,
+      page,
+    };
+  }
+
+  try {
+    let query = client
+      .from("orders")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+
+    if (status && status !== "all") {
+      query = query.eq("status", status);
+    }
+    if (search && search.trim()) {
+      const q = search.trim();
+      query = query.or(`order_ref.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%`);
+    }
+
+    const { data, count, error } = await query;
+    if (error) throw error;
+
+    const totalCount = typeof count === "number" ? count : (data || []).length;
+    const from = page * pageSize;
+
+    return {
+      orders: data || [],
+      totalCount,
+      hasMore: from + pageSize < totalCount,
+      page,
+    };
+  } catch (err) {
+    console.error("[QJ Orders] fetchOrders error:", err.message);
+    return { orders: [], totalCount: 0, hasMore: false, page, error: err.message };
+  }
+}
+
+/**
+ * Update order status (Admin only).
+ */
+async function updateOrderStatus(orderId, newStatus, session) {
+  const client = getSupabaseClient();
+  if (!client || !session) throw new Error("Not authenticated or Supabase not configured.");
+
+  const validStatuses = ["awaiting_confirmation", "confirmed", "processing", "dispatched", "delivered", "cancelled"];
+  if (!validStatuses.includes(newStatus)) {
+    throw new Error(`Invalid status: "${newStatus}". Must be one of: ${validStatuses.join(", ")}`);
+  }
+
+  const { data, error } = await client
+    .from("orders")
+    .update({ status: newStatus })
+    .eq("id", orderId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`Failed to update order status: ${error.message}`);
+  return data;
+}
+
+/**
+ * Fetch a single order by ID or order_ref (Admin only).
+ */
+async function fetchOrderById(orderIdOrRef, session) {
+  const client = getSupabaseClient();
+  if (!client || !session) return null;
+
+  try {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderIdOrRef);
+    let query = client.from("orders").select("*");
+    if (isUuid) {
+      query = query.eq("id", orderIdOrRef);
+    } else {
+      query = query.eq("order_ref", orderIdOrRef);
+    }
+
+    const { data, error } = await query.single();
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    console.warn("[QJ Orders] fetchOrderById error:", err.message);
+    return null;
+  }
+}
+
+// ─── Customer Reviews Operations ─────────────────────────────
+
+/**
+ * Fetch approved customer reviews for a given product ID.
+ */
+async function fetchProductReviews(productId) {
+  const client = getSupabaseClient();
+  if (!client) {
+    // Return sample starter review data if Supabase is offline
+    return {
+      reviews: [
+        {
+          id: "rev-sample-1",
+          product_id: productId,
+          rating: 5,
+          customer_name: "Chinedu O.",
+          review_text: "Top tier quality! Fits true to size and the boots have tremendous grip on the turf.",
+          is_verified_purchase: true,
+          created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+        }
+      ],
+      averageRating: 5.0,
+      totalCount: 1,
+    };
+  }
+
+  try {
+    const { data, error } = await client
+      .from("reviews")
+      .select("id, product_id, rating, review_text, customer_name, is_verified_purchase, created_at")
+      .eq("product_id", productId)
+      .eq("status", "approved")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    const reviews = data || [];
+    const count = reviews.length;
+    const averageRating = count > 0
+      ? (reviews.reduce((acc, r) => acc + r.rating, 0) / count).toFixed(1)
+      : 5.0;
+
+    return {
+      reviews,
+      averageRating: parseFloat(averageRating),
+      totalCount: count,
+    };
+  } catch (err) {
+    console.warn("[QJ Reviews] fetchProductReviews error:", err.message);
+    return { reviews: [], averageRating: 5.0, totalCount: 0 };
+  }
+}
+
+/**
+ * Submit a customer review (defaults to 'pending' moderation status).
+ */
+async function submitReview({ productId, rating, reviewText, customerName, orderRef = null }) {
+  const client = getSupabaseClient();
+  const payload = {
+    product_id: productId,
+    order_ref: orderRef ? orderRef.trim() : null,
+    rating: parseInt(rating, 10) || 5,
+    review_text: reviewText.trim(),
+    customer_name: customerName?.trim() || "Verified Customer",
+    status: "pending",
+    is_verified_purchase: !!orderRef,
+  };
+
+  if (!client) {
+    return { success: true, message: "Review submitted! It will appear once approved by moderation." };
+  }
+
+  try {
+    const { data, error } = await client
+      .from("reviews")
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === "23505") {
+        throw new Error("A review has already been submitted for this order.");
+      }
+      throw error;
+    }
+
+    return { success: true, data, message: "Thank you! Your review has been submitted for moderation." };
+  } catch (err) {
+    console.error("[QJ Reviews] submitReview error:", err.message);
+    throw new Error(err.message || "Failed to submit review. Please try again.");
+  }
+}
+
 // ─── Dashboard Stats ─────────────────────────────────────────
 
 /**
  * Returns aggregate stats for the admin dashboard.
- * { total, featured, byCategory, recentUploads, storageFiles }
+ * { total, featured, ordersCount, awaitingOrdersCount, byCategory, recentUploads, storageFiles, storageBytes }
  */
-async function fetchDashboardStats() {
+async function fetchDashboardStats(session = null) {
   const client = getSupabaseClient();
   if (!client) {
-    // Fallback counts from DEFAULT_PRODUCTS
+    const local = JSON.parse(localStorage.getItem("qj_local_orders") || "[]");
     return {
       total: DEFAULT_PRODUCTS.length,
       featured: DEFAULT_PRODUCTS.filter(p => p.featured).length,
+      ordersCount: local.length,
+      awaitingOrdersCount: local.filter(o => o.status === "awaiting_confirmation").length,
       byCategory: {
         boots: DEFAULT_PRODUCTS.filter(p => p.category === "boots").length,
         jerseys: DEFAULT_PRODUCTS.filter(p => p.category === "jerseys").length,
         sportswear: DEFAULT_PRODUCTS.filter(p => p.category === "sportswear").length,
       },
       recentUploads: DEFAULT_PRODUCTS.slice(0, 5),
+      recentOrders: local.slice(0, 5),
       storageFiles: 0,
       storageBytes: 0,
     };
   }
 
-  // Run all queries in parallel for speed
-  const [totalRes, featuredRes, recentRes, storageRes] = await Promise.allSettled([
-    // Total count
+  // Run queries in parallel
+  const queries = [
+    // Total products
     client.from("products").select("*", { count: "exact", head: true }),
-    // Featured count
+    // Featured products
     client.from("products").select("*", { count: "exact", head: true }).eq("featured", true),
     // 6 most recent products
     client.from("products")
@@ -385,17 +656,38 @@ async function fetchDashboardStats() {
       .limit(6),
     // Storage bucket file list
     client.storage.from(STORAGE_BUCKET).list("", { limit: 1000, sortBy: { column: "created_at", order: "desc" } }),
-  ]);
+  ];
 
-  const total    = totalRes.status    === "fulfilled" ? (totalRes.value.count    || 0) : 0;
-  const featured = featuredRes.status === "fulfilled" ? (featuredRes.value.count || 0) : 0;
-  const recent   = recentRes.status   === "fulfilled" ? (recentRes.value.data    || []) : [];
-  const files    = storageRes.status  === "fulfilled" ? (storageRes.value.data   || []) : [];
+  // If authenticated session, also fetch order stats
+  if (session) {
+    queries.push(
+      client.from("orders").select("*", { count: "exact", head: true }),
+      client.from("orders").select("*", { count: "exact", head: true }).eq("status", "awaiting_confirmation"),
+      client.from("orders").select("*").order("created_at", { ascending: false }).limit(5)
+    );
+  }
 
-  // Calculate approximate storage usage from file metadata
+  const results = await Promise.allSettled(queries);
+
+  const total       = results[0].status === "fulfilled" ? (results[0].value.count || 0) : 0;
+  const featured    = results[1].status === "fulfilled" ? (results[1].value.count || 0) : 0;
+  const recentProds = results[2].status === "fulfilled" ? (results[2].value.data  || []) : [];
+  const files       = results[3].status === "fulfilled" ? (results[3].value.data  || []) : [];
+
+  let ordersCount = 0;
+  let awaitingOrdersCount = 0;
+  let recentOrders = [];
+
+  if (session && results.length >= 7) {
+    ordersCount         = results[4].status === "fulfilled" ? (results[4].value.count || 0) : 0;
+    awaitingOrdersCount = results[5].status === "fulfilled" ? (results[5].value.count || 0) : 0;
+    recentOrders        = results[6].status === "fulfilled" ? (results[6].value.data  || []) : [];
+  }
+
+  // Storage calculation
   const storageBytes = files.reduce((sum, f) => sum + (f.metadata?.size || 0), 0);
 
-  // Category breakdown (separate quick queries)
+  // Category breakdown
   let byCategory = { boots: 0, jerseys: 0, sportswear: 0 };
   try {
     const [b, j, s] = await Promise.all([
@@ -409,14 +701,17 @@ async function fetchDashboardStats() {
   return {
     total,
     featured,
+    ordersCount,
+    awaitingOrdersCount,
     byCategory,
-    recentUploads: recent.map(r => normaliseProduct({
+    recentUploads: recentProds.map(r => normaliseProduct({
       ...r,
       product_name: r.product_name,
       image_url: r.image_url,
       sizes: r.sizes || [],
       description: "",
     })),
+    recentOrders,
     storageFiles: files.length,
     storageBytes,
   };
@@ -430,4 +725,5 @@ function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
+
 
