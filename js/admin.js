@@ -36,6 +36,17 @@ async function handleAdminLogin(e) {
     return;
   }
 
+  const userRole = data.session?.user?.app_metadata?.role;
+  if (userRole !== "admin") {
+    errEl.textContent    = "❌ Access Denied: This account does not have administrator authorization.";
+    errEl.style.display  = "block";
+    btn.textContent      = "Sign In";
+    btn.disabled         = false;
+    document.getElementById("admin-password").value = "";
+    await signOutAdmin();
+    return;
+  }
+
   _adminSession = data.session;
   enterAdminPanel();
 }
@@ -952,8 +963,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Check if already logged in (persisted session)
   const session = await getAdminSession();
   if (session) {
-    _adminSession = session;
-    enterAdminPanel();
+    const role = session.user?.app_metadata?.role;
+    if (role === "admin") {
+      _adminSession = session;
+      enterAdminPanel();
+    } else {
+      await signOutAdmin();
+    }
   }
 
   // Login form
