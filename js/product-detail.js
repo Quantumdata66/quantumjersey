@@ -200,8 +200,8 @@ function renderProductDetailView(product) {
           <strong class="spec-val">Nationwide (1-3 Days)</strong>
         </div>
         <div class="spec-card">
-          <span class="spec-label">Promo Status</span>
-          <strong class="spec-val" style="color:var(--accent-green);">Free Shipping > ₦50k</strong>
+          <span class="spec-label">Delivery Fee</span>
+          <strong class="spec-val" style="color:var(--accent-green);">₦5,000 Nationwide</strong>
         </div>
         <div class="spec-card">
           <span class="spec-label">Support</span>

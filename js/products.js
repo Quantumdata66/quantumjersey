@@ -286,9 +286,8 @@ function buildMultiItemWhatsAppMessage(orderData, items) {
                  `   • Link: ${link}\n`;
   });
 
-  const deliveryFeeLabel = orderData.delivery_fee === 0
-    ? "FREE (Promo: Lagos/Kaduna > ₦50,000)"
-    : (orderData.delivery_fee > 0 ? formatPrice(orderData.delivery_fee) : "To be confirmed");
+  const deliveryFee = typeof orderData.delivery_fee === "number" ? orderData.delivery_fee : 5000;
+  const deliveryFeeLabel = `${formatPrice(deliveryFee)} (Standard Nationwide)`;
 
   const fullMessage =
     `⚡ *NEW ORDER — Quantum Jersey*\n` +
@@ -304,9 +303,9 @@ function buildMultiItemWhatsAppMessage(orderData, items) {
     itemsText +
     `\n💰 *Financial Summary:*\n` +
     `• Items Subtotal: *${formatPrice(orderData.subtotal)}*\n` +
-    `• Estimated Delivery: *${deliveryFeeLabel}*\n` +
+    `• Standard Delivery: *${deliveryFeeLabel}*\n` +
     `• *Estimated Total: ${formatPrice(orderData.total_amount)}*\n\n` +
-    `_Note: Order record registered on website. Please confirm stock availability, delivery schedule, and payment details._`;
+    `_Note: Standard nationwide delivery is ₦5,000. For remote locations, any courier waybill surcharge will be confirmed with you before dispatch._`;
 
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(fullMessage)}`;
 }

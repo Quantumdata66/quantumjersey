@@ -1905,32 +1905,25 @@ footer {
   color: #ef4444;
 }
 
-/* Free Delivery Bar */
-.cart-promo-banner {
-  background: rgba(0, 255, 135, 0.05);
+/* Standard Nationwide Delivery Bar */
+.cart-delivery-banner {
+  background: rgba(0, 255, 135, 0.06);
   border-bottom: 1px solid var(--border-accent);
   padding: 12px 24px;
 }
 
-.cart-promo-text {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
+.cart-delivery-text {
+  font-size: 0.84rem;
+  color: var(--text-primary);
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.cart-promo-track {
-  height: 6px;
-  background: var(--bg-surface-2);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-}
-
-.cart-promo-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent-green), var(--accent-green-l));
-  border-radius: var(--radius-full);
-  transition: width 0.4s ease;
+.cart-delivery-subnote {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
 }
 
 /* Cart Items Container */
@@ -2247,6 +2240,17 @@ footer {
   justify-content: space-between;
   margin-bottom: 6px;
   color: var(--text-secondary);
+}
+
+.checkout-delivery-note {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: 6px 0 10px 0;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-xs);
+  border-left: 2px solid var(--accent-green);
 }
 
 .summary-divider {

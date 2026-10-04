@@ -184,27 +184,21 @@ function getCartSubtotal() {
   }, 0);
 }
 
+const STANDARD_DELIVERY_FEE = 5000;
+
 /**
- * Calculates delivery fee based on state and subtotal.
- * Free delivery in Lagos and Kaduna on orders >= ₦50,000.
+ * Standard nationwide delivery policy: ₦5,000 per order nationwide.
+ * Remote location surcharges (if applicable by courier) are confirmed via WhatsApp before dispatch.
  */
 function calculateDelivery(stateName, subtotal) {
-  if (!stateName) {
-    return { fee: 0, isKnown: false, isFreePromo: false, label: "Calculated at confirmation" };
-  }
-
-  const s = stateName.trim().toLowerCase();
-  const isLagosOrKaduna = s.includes("lagos") || s.includes("kaduna");
-
-  if (isLagosOrKaduna) {
-    if (subtotal >= 50000) {
-      return { fee: 0, isKnown: true, isFreePromo: true, label: "FREE (Promo: Orders over ₦50,000)" };
-    }
-    return { fee: 3000, isKnown: true, isFreePromo: false, label: "₦3,000 (Local Dispatch)" };
-  }
-
-  // Other Nigerian states (Abuja, Port Harcourt, Kano, etc.)
-  return { fee: 4500, isKnown: true, isFreePromo: false, label: "₦4,500 (Nationwide Courier)" };
+  return {
+    fee: STANDARD_DELIVERY_FEE,
+    isKnown: true,
+    isStandard: true,
+    isFreePromo: false,
+    label: "₦5,000 (Standard Nationwide)",
+    notice: "Remote locations may incur courier waybill surcharges confirmed on WhatsApp.",
+  };
 }
 
 /**

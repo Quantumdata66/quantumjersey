@@ -34,13 +34,11 @@ function injectCartUIElements() {
         <button class="cart-close-btn" onclick="closeCartDrawer()" aria-label="Close cart">✕</button>
       </div>
 
-      <!-- Free Delivery Progress Bar -->
-      <div id="cart-promo-banner" class="cart-promo-banner">
-        <div class="cart-promo-text" id="cart-promo-text">
-          Free delivery in Lagos & Kaduna on orders over ₦50,000!
-        </div>
-        <div class="cart-promo-track">
-          <div id="cart-promo-fill" class="cart-promo-fill" style="width: 0%"></div>
+      <!-- Standard Nationwide Delivery Banner -->
+      <div id="cart-delivery-banner" class="cart-delivery-banner">
+        <div class="cart-delivery-text">
+          <span>🚚 <strong>Nationwide Delivery: ₦5,000</strong> per order</span>
+          <span class="cart-delivery-subnote">Remote location courier waybill surcharges confirmed via WhatsApp</span>
         </div>
       </div>
 
@@ -129,9 +127,10 @@ function injectCartUIElements() {
               <span id="co-items-subtotal">₦0</span>
             </div>
             <div class="summary-line">
-              <span>Estimated Delivery</span>
-              <span id="co-delivery-fee" style="color:var(--accent-green);">Select state</span>
+              <span>Standard Delivery</span>
+              <span id="co-delivery-fee" style="color:var(--text-primary);">₦5,000</span>
             </div>
+            <p class="checkout-delivery-note">📍 Standard delivery is ₦5,000 nationwide. For remote locations, any courier waybill surcharge will be confirmed on WhatsApp before dispatch.</p>
             <div class="summary-divider"></div>
             <div class="summary-line total-line">
               <span>Estimated Total</span>
@@ -267,18 +266,6 @@ function renderCartDrawer() {
 
   const items = typeof getCartItems === "function" ? getCartItems() : [];
   const subtotal = typeof getCartSubtotal === "function" ? getCartSubtotal() : 0;
-
-  // Free delivery promo logic
-  const FREE_THRESHOLD = 50000;
-  if (subtotal >= FREE_THRESHOLD) {
-    if (promoFill) promoFill.style.width = "100%";
-    if (promoText) promoText.innerHTML = `🎉 <strong>Free Delivery unlocked</strong> for Lagos & Kaduna!`;
-  } else {
-    const remaining = FREE_THRESHOLD - subtotal;
-    const pct = Math.min(100, Math.round((subtotal / FREE_THRESHOLD) * 100));
-    if (promoFill) promoFill.style.width = `${pct}%`;
-    if (promoText) promoText.innerHTML = `Add <strong>${formatPrice(remaining)}</strong> more for Free Delivery (Lagos & Kaduna)`;
-  }
 
   if (subtotalEl) {
     subtotalEl.textContent = formatPrice(subtotal);
@@ -438,22 +425,18 @@ function updateCheckoutSummary() {
   if (subtotalEl) subtotalEl.textContent = formatPrice(subtotal);
 
   const selectedState = stateSelect ? stateSelect.value : "";
-  const delivery = calculateDelivery(selectedState, subtotal);
+  const delivery = (typeof calculateDelivery === "function")
+    ? calculateDelivery(selectedState, subtotal)
+    : { fee: 5000, isKnown: true };
+
+  const deliveryFee = count > 0 ? delivery.fee : 0;
 
   if (deliveryEl) {
-    if (!selectedState) {
-      deliveryEl.textContent = "Select state";
-      deliveryEl.style.color = "var(--text-muted)";
-    } else if (delivery.fee === 0) {
-      deliveryEl.textContent = "FREE (Promo: Lagos/Kaduna > ₦50k)";
-      deliveryEl.style.color = "var(--accent-green)";
-    } else {
-      deliveryEl.textContent = formatPrice(delivery.fee);
-      deliveryEl.style.color = "var(--text-primary)";
-    }
+    deliveryEl.textContent = formatPrice(deliveryFee);
+    deliveryEl.style.color = "var(--text-primary)";
   }
 
-  const grandTotal = subtotal + (delivery.isKnown ? delivery.fee : 0);
+  const grandTotal = count > 0 ? subtotal + deliveryFee : 0;
   if (grandTotalEl) {
     grandTotalEl.textContent = formatPrice(grandTotal);
   }
@@ -497,8 +480,10 @@ async function handleCheckoutSubmit(event) {
   }
 
   const subtotal = typeof getCartSubtotal === "function" ? getCartSubtotal() : 0;
-  const delivery = calculateDelivery(state, subtotal);
-  const deliveryFee = delivery.isKnown ? delivery.fee : 0;
+  const delivery = (typeof calculateDelivery === "function")
+    ? calculateDelivery(state, subtotal)
+    : { fee: 5000, isKnown: true };
+  const deliveryFee = delivery.fee || 5000;
   const grandTotal = subtotal + deliveryFee;
 
   // Prepare order record payload
