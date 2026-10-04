@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Shop authentic football boots, jerseys, and sportswear at Quantum Jersey. Fast nationwide delivery and easy WhatsApp ordering."/>
+  <meta property="og:title" content="Product Details | Quantum Jersey"/>
+  <meta property="og:description" content="Premium football gear at Quantum Jersey. Order on WhatsApp with fast nationwide delivery."/>
+  <meta property="og:image" content="assets/images/hero_banner.webp"/>
+  <meta property="og:type" content="product"/>
+  <title id="page-title">Product Details | Quantum Jersey</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>"/>
+</head>
+<body>
+
+<!-- Promo Banner -->
+<div class="promo-banner">
+  ⚡ Standard Nationwide Delivery: ₦5,000 — Fast courier dispatch & easy WhatsApp ordering!
+</div>
+
+<!-- Navigation -->
+<nav class="navbar">
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-logo">
+      <div class="nav-logo-icon">⚽</div>
+      Quantum<span>Jersey</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html" class="nav-link">Home</a></li>
+      <li><a href="catalog.html" class="nav-link">All Products</a></li>
+      <li><a href="boots.html" class="nav-link">Boots</a></li>
+      <li><a href="jerseys.html" class="nav-link">Jerseys</a></li>
+      <li><a href="sportswear.html" class="nav-link">Sportswear</a></li>
+      <li><a href="contact.html" class="nav-link">Contact</a></li>
+      <li>
+        <a href="https://wa.me/2348116154796" target="_blank" rel="noopener" class="nav-link nav-cta">
+          WhatsApp Us
+        </a>
+      </li>
+    </ul>
+    <button class="hamburger" id="hamburger" aria-label="Toggle menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- Mobile Menu -->
+<div class="mobile-menu" id="mobile-menu">
+  <a href="index.html" class="nav-link">🏠 Home</a>
+  <a href="catalog.html" class="nav-link">🛍️ All Products</a>
+  <a href="boots.html" class="nav-link">👟 Football Boots</a>
+  <a href="jerseys.html" class="nav-link">👕 Jerseys</a>
+  <a href="sportswear.html" class="nav-link">🏃 Sportswear</a>
+  <a href="contact.html" class="nav-link">📞 Contact</a>
+  <a href="https://wa.me/2348116154796" target="_blank" rel="noopener" class="nav-link nav-cta">
+    💬 WhatsApp Us
+  </a>
+</div>
+
+<!-- Main Product Detail View -->
+<main class="product-detail-main">
+  <div class="container">
+    
+    <!-- Breadcrumb Navigation -->
+    <nav class="breadcrumb-nav" aria-label="Breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="breadcrumb-sep">›</span>
+      <a href="catalog.html" id="bc-category">Catalog</a>
+      <span class="breadcrumb-sep">›</span>
+      <span id="bc-title" class="breadcrumb-current">Product Details</span>
+    </nav>
+
+    <!-- Product Layout Grid -->
+    <div id="product-detail-container" class="product-detail-grid">
+      <!-- Loading skeleton placeholder -->
+      <div class="product-gallery skeleton-card" style="min-height:420px;"></div>
+      <div class="product-info skeleton-card" style="min-height:420px;"></div>
+    </div>
+
+    <!-- Product Trust Features -->
+    <div class="detail-features-strip">
+      <div class="detail-feature-item">
+        <div class="detail-feature-icon">⚡</div>
+        <div>
+          <h4>Instant WhatsApp Order</h4>
+          <p>Quick response within minutes on our official line</p>
+        </div>
+      </div>
+      <div class="detail-feature-item">
+        <div class="detail-feature-icon">🛡️</div>
+        <div>
+          <h4>100% Authentic Quality</h4>
+          <p>Verified gear inspected before dispatch</p>
+        </div>
+      </div>
+      <div class="detail-feature-item">
+        <div class="detail-feature-icon">🚚</div>
+        <div>
+          <h4>Nationwide Delivery</h4>
+          <p>Lagos, Kaduna, Abuja, Port Harcourt & all states</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Product Reviews Section (Task 5) ── -->
+    <section class="section-sm product-reviews-section" id="reviews-section">
+      <div class="reviews-header-wrap">
+        <div>
+          <h2 style="font-size:1.6rem;margin-bottom:6px;">Customer <span class="text-accent">Reviews</span></h2>
+          <p style="font-size:0.88rem;color:var(--text-secondary);">Feedback from verified Nigerian football fans and ballers</p>
+        </div>
+        <button class="btn-secondary btn-write-review" onclick="openReviewModal()">
+          ✍️ Write a Review
+        </button>
+      </div>
+
+      <div class="reviews-summary-card">
+        <div class="rating-big-box">
+          <span id="avg-rating-num" class="rating-big-num">5.0</span>
+          <div class="rating-big-stars" id="avg-rating-stars">★★★★★</div>
+          <span id="total-reviews-count" class="rating-count-label">Based on verified orders</span>
+        </div>
+        <div class="rating-badges-box">
+          <div class="rating-verified-pill">
+            <span class="pill-check">✓</span> 100% Verified Purchases Derived From Delivered Orders
+          </div>
+          <p class="rating-subnote">
+            Customers receive an official order reference upon checkout to verify their purchase and rate products.
+          </p>
+        </div>
+      </div>
+
+      <!-- Reviews Stream -->
+      <div id="reviews-list-container" class="reviews-stream-grid">
+        <div class="reviews-loading">Loading customer reviews…</div>
+      </div>
+    </section>
+
+    <!-- ── Related Products ── -->
+    <section class="section-sm related-products-section">
+      <div class="section-header" style="margin-bottom:28px;">
+        <h2>You May Also <span class="text-accent">Like</span></h2>
+        <p>Explore matching jerseys, elite boots and training apparel.</p>
+      </div>
+      <div class="product-grid" id="related-grid"></div>
+    </section>
+
+  </div>
+</main>
+
+<!-- Write Review Modal -->
+<div id="qj-review-modal" class="modal-overlay" style="display:none;" onclick="handleReviewModalBackdrop(event)">
+  <div class="modal-card review-modal-card">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="modal-header-icon">✍️</div>
+        <div>
+          <h3 style="font-size:1.2rem;font-weight:800;color:var(--text-primary);">Write a <span class="text-accent">Review</span></h3>
+          <p style="font-size:0.8rem;color:var(--text-secondary);margin:0;">Share your experience with this product</p>
+        </div>
+      </div>
+      <button class="modal-close-btn" onclick="closeReviewModal()" aria-label="Close modal">✕</button>
+    </div>
+
+    <form id="review-form" onsubmit="handleReviewSubmit(event)" style="margin-top:16px;">
+      <!-- Order Ref -->
+      <div class="form-field" style="margin-bottom:14px;">
+        <label for="rev-order-ref">Order Reference (Optional)</label>
+        <input type="text" id="rev-order-ref" placeholder="e.g. QJ-202610-8429" style="background:var(--bg-surface-2);"/>
+        <span style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">Providing your Order Ref adds a "Verified Purchase" badge.</span>
+      </div>
+
+      <!-- Customer Name -->
+      <div class="form-field" style="margin-bottom:14px;">
+        <label for="rev-name">Your Display Name *</label>
+        <input type="text" id="rev-name" placeholder="e.g. Chinedu O. or Ahmed K." required/>
+      </div>
+
+      <!-- Star Rating -->
+      <div class="form-field" style="margin-bottom:14px;">
+        <label>Rating *</label>
+        <div class="star-rating-picker" id="star-picker">
+          <button type="button" class="star-pick-btn active" data-val="5">★ 5 - Excellent</button>
+          <button type="button" class="star-pick-btn" data-val="4">★ 4 - Good</button>
+          <button type="button" class="star-pick-btn" data-val="3">★ 3 - Average</button>
+        </div>
+        <input type="hidden" id="rev-rating" value="5"/>
+      </div>
+
+      <!-- Written Review -->
+      <div class="form-field" style="margin-bottom:18px;">
+        <label for="rev-comment">Your Review *</label>
+        <textarea id="rev-comment" rows="3" placeholder="Tell us about the fit, comfort, ball feel, and quality…" required></textarea>
+      </div>
+
+      <div id="review-msg" class="review-feedback" style="display:none;"></div>
+
+      <button type="submit" id="btn-submit-review" class="btn-primary" style="width:100%;justify-content:center;">
+        Submit Review for Moderation
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a href="index.html" class="nav-logo" style="margin-bottom:0;">
+          <div class="nav-logo-icon">⚽</div>
+          Quantum<span style="color:var(--accent-green)">Jersey</span>
+        </a>
+        <p>Nigeria's premier destination for authentic football boots, jerseys, and sportswear. Quality you can trust, delivered to your door.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Shop</h4>
+        <ul>
+          <li><a href="catalog.html">All Products</a></li>
+          <li><a href="boots.html">Football Boots</a></li>
+          <li><a href="jerseys.html">Jerseys</a></li>
+          <li><a href="sportswear.html">Sportswear</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Info</h4>
+        <ul>
+          <li><a href="contact.html">Contact Us</a></li>
+          <li><a href="https://wa.me/2348116154796" target="_blank">WhatsApp</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="https://wa.me/2348116154796" target="_blank">+234 811 615 4796</a></li>
+          <li><a href="https://instagram.com/quantum_jersey" target="_blank">@quantum_jersey</a></li>
+          <li><a href="https://x.com/Quant_66" target="_blank">@Quant_66</a></li>
+          <li><a href="https://tiktok.com/@quantumjersey" target="_blank">@quantumjersey</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p style="color:var(--text-muted);">© 2026 Quantum Jersey. All rights reserved. 🇳🇬</p>
+      <div class="footer-social">
+        <a href="https://wa.me/2348116154796" target="_blank" class="social-link" aria-label="WhatsApp">💬</a>
+        <a href="https://instagram.com/quantum_jersey" target="_blank" class="social-link" aria-label="Instagram">📸</a>
+        <a href="https://x.com/Quant_66" target="_blank" class="social-link" aria-label="X (Twitter)">𝕏</a>
+        <a href="https://tiktok.com/@quantumjersey" target="_blank" class="social-link" aria-label="TikTok">🎵</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- Floating WhatsApp FAB -->
+<a href="https://wa.me/2348116154796?text=Hello%20Quantum%20Jersey!%20I%20have%20a%20question%20about%20a%20product%20%F0%9F%9B%8D%EF%B8%8F" target="_blank" rel="noopener" class="whatsapp-fab" aria-label="Order on WhatsApp">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+  </svg>
+</a>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/products.js"></script>
+<script src="js/supabase.js"></script>
+<script src="js/cart.js"></script>
+<script src="js/cart-ui.js"></script>
+<script src="js/render.js"></script>
+<script src="js/product-detail.js"></script>
+</body>
+</html>

@@ -21,6 +21,7 @@
   "rewrites": [
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/catalog", "destination": "/catalog.html" },
+    { "source": "/product", "destination": "/product.html" },
     { "source": "/boots", "destination": "/boots.html" },
     { "source": "/jerseys", "destination": "/jerseys.html" },
     { "source": "/sportswear", "destination": "/sportswear.html" },
