@@ -539,6 +539,7 @@ async function fetchProductReviews(productId) {
           customer_name: "Chinedu O.",
           review_text: "Top tier quality! Fits true to size and the boots have tremendous grip on the turf.",
           is_verified_purchase: true,
+          review_source: "website_order",
           created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
         }
       ],
@@ -550,7 +551,7 @@ async function fetchProductReviews(productId) {
   try {
     const { data, error } = await client
       .from("reviews")
-      .select("id, product_id, rating, review_text, customer_name, is_verified_purchase, created_at")
+      .select("id, product_id, rating, review_text, customer_name, is_verified_purchase, review_source, created_at")
       .eq("product_id", productId)
       .eq("status", "approved")
       .order("created_at", { ascending: false });
@@ -576,21 +577,27 @@ async function fetchProductReviews(productId) {
 
 /**
  * Submit a customer review (defaults to 'pending' moderation status).
+ * Supports both website order reviews and previous customer reviews.
+ * Public submissions are always unverified ('is_verified_purchase': false) until admin approves.
  */
-async function submitReview({ productId, rating, reviewText, customerName, orderRef = null }) {
+async function submitReview({ productId, rating, reviewText, customerName, orderRef = null, reviewSource = "website_order", purchaseDetails = null }) {
   const client = getSupabaseClient();
+  const source = reviewSource === "previous_customer" ? "previous_customer" : "website_order";
+
   const payload = {
     product_id: productId,
-    order_ref: orderRef ? orderRef.trim() : null,
-    rating: parseInt(rating, 10) || 5,
-    review_text: reviewText.trim(),
+    order_ref: (source === "website_order" && orderRef) ? orderRef.trim() : null,
+    rating: Math.max(1, Math.min(5, parseInt(rating, 10) || 5)),
+    review_text: (reviewText || "").trim(),
     customer_name: customerName?.trim() || "Verified Customer",
     status: "pending",
-    is_verified_purchase: !!orderRef,
+    is_verified_purchase: false,
+    review_source: source,
+    purchase_details: (source === "previous_customer" && purchaseDetails) ? purchaseDetails.trim() : null,
   };
 
   if (!client) {
-    return { success: true, message: "Review submitted! It will appear once approved by moderation." };
+    return { success: true, data: payload, message: "Review submitted! It will appear once approved by moderation." };
   }
 
   try {
