@@ -179,20 +179,12 @@ p  { color: var(--text-secondary); }
 
 /* ── Navigation ─────────────────────────────────────────── */
 .navbar {
-  position: sticky;
-  top: 0;
-  z-index: 1000;
+  position: relative;
   height: var(--nav-h);
-  background: rgba(6, 6, 16, 0.88);
-  backdrop-filter: blur(24px) saturate(1.8);
-  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  background: rgba(6, 6, 16, 0.95);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  transition: box-shadow var(--transition);
-}
-.navbar.scrolled {
-  box-shadow: 0 4px 30px rgba(0,0,0,0.5);
 }
 .nav-inner {
   display: flex;
@@ -2423,7 +2415,7 @@ footer {
 
 .detail-gallery-wrap {
   position: sticky;
-  top: 100px;
+  top: 24px;
 }
 
 .detail-img-card {

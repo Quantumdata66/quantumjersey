@@ -582,33 +582,59 @@ async function loadAdminReviews() {
       return;
     }
 
-    container.innerHTML = data.map(rev => `
-      <div class="admin-product-row" style="align-items:flex-start;">
-        <div class="admin-product-info">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <strong>${rev.customer_name}</strong>
-            <span class="status-badge status-${rev.status}">${rev.status.toUpperCase()}</span>
-            <span style="color:var(--accent-gold);">★ ${rev.rating}.0</span>
+    container.innerHTML = data.map(rev => {
+      const isPreviousCustomer = rev.review_source === "previous_customer";
+      const sourceBadge = isPreviousCustomer
+        ? `<span class="status-badge" style="background:rgba(96,165,250,0.15);border:1px solid rgba(96,165,250,0.4);color:#93c5fd;">🏷️ Previous Customer</span>`
+        : `<span class="status-badge" style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.4);color:#4ade80;">🛍️ Website Order</span>`;
+
+      const verifiedBadge = rev.is_verified_purchase
+        ? `<span style="font-size:0.75rem;color:var(--accent-green);font-weight:700;">✓ Verified</span>`
+        : `<span style="font-size:0.75rem;color:var(--text-muted);">Unverified</span>`;
+
+      const dateStr = rev.created_at ? new Date(rev.created_at).toLocaleDateString("en-NG", { month: "short", day: "numeric", year: "numeric" }) : "";
+
+      return `
+        <div class="admin-product-row" style="align-items:flex-start;padding:18px;margin-bottom:12px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--radius-md);">
+          <div class="admin-product-info" style="flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+              <strong style="font-size:0.95rem;color:var(--text-primary);">${rev.customer_name}</strong>
+              ${sourceBadge}
+              <span class="status-badge status-${rev.status}">${rev.status.toUpperCase()}</span>
+              ${verifiedBadge}
+              <span style="color:var(--accent-gold);font-weight:700;margin-left:auto;">★ ${rev.rating}.0</span>
+            </div>
+
+            <p style="font-size:0.9rem;color:var(--text-primary);margin:6px 0;line-height:1.5;">"${rev.review_text}"</p>
+
+            <div style="font-size:0.78rem;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:6px;">
+              <span>Product: <strong style="color:var(--text-primary);">${rev.products?.product_name || rev.product_id}</strong></span>
+              ${rev.order_ref ? `<span>Order Ref: <strong style="color:var(--accent-green);">${rev.order_ref}</strong></span>` : ""}
+              ${dateStr ? `<span>Submitted: ${dateStr}</span>` : ""}
+            </div>
+
+            ${rev.purchase_details ? `
+              <div style="font-size:0.8rem;color:var(--text-secondary);background:var(--bg-surface-1);border:1px solid var(--border);border-radius:var(--radius-xs);padding:8px 12px;margin-top:10px;">
+                💬 <strong>Previous Purchase Details:</strong> <em>${rev.purchase_details}</em>
+              </div>
+            ` : ""}
           </div>
-          <p style="font-size:0.86rem;color:var(--text-primary);margin:4px 0;">"${rev.review_text}"</p>
-          <span style="font-size:0.75rem;color:var(--text-muted);">
-            Product: <strong>${rev.products?.product_name || rev.product_id}</strong> · Order: ${rev.order_ref || "None"}
-          </span>
+
+          <div class="admin-row-actions" style="margin-left:14px;flex-shrink:0;">
+            ${rev.status !== "approved" ? `
+              <button class="btn-admin-feature" title="Verify purchase and publish review" onclick="handleModerateReview('${rev.id}', 'approved')">
+                ✓ Approve & Verify
+              </button>
+            ` : ""}
+            ${rev.status !== "rejected" ? `
+              <button class="btn-admin-delete" title="Reject review" onclick="handleModerateReview('${rev.id}', 'rejected')">
+                ✕ Reject
+              </button>
+            ` : ""}
+          </div>
         </div>
-        <div class="admin-row-actions">
-          ${rev.status !== "approved" ? `
-            <button class="btn-admin-feature" onclick="handleModerateReview('${rev.id}', 'approved')">
-              ✓ Approve
-            </button>
-          ` : ""}
-          ${rev.status !== "rejected" ? `
-            <button class="btn-admin-delete" onclick="handleModerateReview('${rev.id}', 'rejected')">
-              ✕ Reject
-            </button>
-          ` : ""}
-        </div>
-      </div>
-    `).join("");
+      `;
+    }).join("");
   } catch (err) {
     container.innerHTML = `<p class="admin-empty" style="color:#f87171">Error loading reviews: ${err.message}</p>`;
   }
@@ -619,13 +645,18 @@ async function handleModerateReview(reviewId, newStatus) {
   if (!client || !_adminSession) return;
 
   try {
+    const updatePayload = {
+      status: newStatus,
+      is_verified_purchase: newStatus === "approved",
+    };
+
     const { error } = await client
       .from("reviews")
-      .update({ status: newStatus })
+      .update(updatePayload)
       .eq("id", reviewId);
 
     if (error) throw error;
-    showMsg(`✅ Review ${newStatus}!`, "success");
+    showMsg(`✅ Review ${newStatus === 'approved' ? 'approved & verified' : 'rejected'}!`, "success");
     loadAdminReviews();
   } catch (err) {
     showMsg(`❌ Error: ${err.message}`, "error");

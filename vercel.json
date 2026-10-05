@@ -25,6 +25,7 @@
     { "source": "/boots", "destination": "/boots.html" },
     { "source": "/jerseys", "destination": "/jerseys.html" },
     { "source": "/sportswear", "destination": "/sportswear.html" },
-    { "source": "/contact", "destination": "/contact.html" }
+    { "source": "/contact", "destination": "/contact.html" },
+    { "source": "/review", "destination": "/review.html" }
   ]
 }
