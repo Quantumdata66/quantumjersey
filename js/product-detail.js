@@ -417,7 +417,7 @@ async function handleReviewSubmit(event) {
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.textContent = "Submit Review for Moderation";
+      submitBtn.textContent = "Submit Review";
     }
   }
 }

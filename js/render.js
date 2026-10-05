@@ -348,14 +348,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Navbar glassmorphism on scroll
-  const navbar = document.querySelector(".navbar");
-  if (navbar) {
-    const handleScroll = () => navbar.classList.toggle("scrolled", window.scrollY > 20);
-    window.addEventListener("scroll", handleScroll);
-    handleScroll();
-  }
-
   // Scroll reveal
   const animates = document.querySelectorAll(".scroll-animate");
   if (animates.length > 0 && "IntersectionObserver" in window) {
