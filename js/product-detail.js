@@ -121,7 +121,7 @@ function renderProductDetailView(product) {
         <div class="detail-img-glow"></div>
       </div>
       <div class="detail-guarantee-pill">
-        <span>🛡️ 100% Guaranteed Authentic</span>
+        <span>🛡️ Premium Quality Assured</span>
         <span>⚡ Verified Courier Packaging</span>
       </div>
     </div>

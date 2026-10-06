@@ -2,7 +2,7 @@
 
 > **Premium football merchandise storefront** — built as a production-grade platform and portfolio project demonstrating full-stack web development, cloud infrastructure, and AI integration.
 
-**Live:** [quantum-jersey.vercel.app](https://quantum-jersey.vercel.app) &nbsp;|&nbsp; **Admin:** `/admin`
+**Live:** [quantumjersey.vercel.app](https://quantumjersey.vercel.app) &nbsp;|&nbsp; **Admin:** `/admin`
 
 ---
 
