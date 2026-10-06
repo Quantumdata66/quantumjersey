@@ -325,10 +325,45 @@ async function initPageProducts(containerId, defaultCategory = "all") {
 }
 
 /**
+ * Asynchronously calculates and renders the dynamic product count for the homepage hero stat.
+ * Queries Supabase total product count (in-stock distinct listings) or falls back to DEFAULT_PRODUCTS catalog.
+ */
+async function updateHeroProductCount() {
+  const countEl = document.getElementById("hero-product-count");
+  if (!countEl) return;
+
+  // Immediate default from loaded catalog
+  const fallbackCount = (typeof DEFAULT_PRODUCTS !== "undefined" && Array.isArray(DEFAULT_PRODUCTS))
+    ? DEFAULT_PRODUCTS.length
+    : 0;
+
+  if (fallbackCount > 0 && !countEl.textContent.trim()) {
+    countEl.textContent = `${fallbackCount}+`;
+  }
+
+  try {
+    if (typeof fetchProductsPaginated === "function") {
+      const result = await fetchProductsPaginated({ pageSize: 1 });
+      if (result && typeof result.totalCount === "number" && result.totalCount > 0) {
+        countEl.textContent = `${result.totalCount}+`;
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn("[QJ] Dynamic product count fetch error:", err.message);
+  }
+
+  if (fallbackCount > 0) {
+    countEl.textContent = `${fallbackCount}+`;
+  }
+}
+
+/**
  * Asynchronously load and render featured products on the homepage.
  */
 async function renderFeatured(containerId, count = 4) {
   showSkeletonGrid(containerId, count);
+  updateHeroProductCount();
   const products = await fetchProducts({ featuredOnly: true });
   const fallback = products.length === 0 ? DEFAULT_PRODUCTS.slice(0, count) : products.slice(0, count);
   renderProducts(fallback, containerId, false);
@@ -337,6 +372,8 @@ async function renderFeatured(containerId, count = 4) {
 // ─── Shared UI: Hamburger, Navbar, Scroll Reveal ─────────────
 
 document.addEventListener("DOMContentLoaded", () => {
+  updateHeroProductCount();
+
   // Hamburger menu
   const hamburger = document.getElementById("hamburger");
   const mobileMenu = document.getElementById("mobile-menu");

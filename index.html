@@ -87,7 +87,7 @@
     </div>
     <div class="hero-stats">
       <div class="hero-stat">
-        <strong>14+</strong>
+        <strong id="hero-product-count"></strong>
         <span>Curated Products</span>
       </div>
       <div class="hero-stat">
@@ -386,8 +386,11 @@
 <script>
   // Hero background
   document.getElementById('hero-bg').style.backgroundImage = "url('assets/images/hero_banner.webp')";
-  // Render featured products on homepage (async — fetches from Supabase or falls back to defaults)
-  document.addEventListener('DOMContentLoaded', () => { renderFeatured('featured-grid', 4); });
+  // Render featured products on homepage & update dynamic product count
+  document.addEventListener('DOMContentLoaded', () => { 
+    renderFeatured('featured-grid', 4);
+    if (typeof updateHeroProductCount === 'function') updateHeroProductCount();
+  });
 </script>
 </body>
 </html>
