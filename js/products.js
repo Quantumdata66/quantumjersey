@@ -239,7 +239,7 @@ function buildProductUrl(productId) {
     const origin = window.location.origin;
     return `${origin}/product.html?id=${encodeURIComponent(productId)}`;
   }
-  return `https://quantum-jersey.vercel.app/product.html?id=${encodeURIComponent(productId)}`;
+  return `https://quantumjersey.vercel.app/product.html?id=${encodeURIComponent(productId)}`;
 }
 
 /**

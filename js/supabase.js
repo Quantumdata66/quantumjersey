@@ -529,22 +529,10 @@ async function fetchOrderById(orderIdOrRef, session) {
 async function fetchProductReviews(productId) {
   const client = getSupabaseClient();
   if (!client) {
-    // Return sample starter review data if Supabase is offline
     return {
-      reviews: [
-        {
-          id: "rev-sample-1",
-          product_id: productId,
-          rating: 5,
-          customer_name: "Chinedu O.",
-          review_text: "Top tier quality! Fits true to size and the boots have tremendous grip on the turf.",
-          is_verified_purchase: true,
-          review_source: "website_order",
-          created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-        }
-      ],
+      reviews: [],
       averageRating: 5.0,
-      totalCount: 1,
+      totalCount: 0,
     };
   }
 
