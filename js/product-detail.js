@@ -47,7 +47,8 @@ async function initProductDetailPage() {
   }
 
   _currentProduct = product;
-  _selectedSize = (product.sizes && product.sizes.length > 0) ? product.sizes[0] : "Standard";
+  const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
+  _selectedSize = hasSizes ? product.sizes[0] : null;
   _selectedQty = 1;
 
   // Update Page Title and Meta Tags
@@ -102,12 +103,14 @@ function renderProductDetailView(product) {
     badgeHTML = `<span class="${badgeClass}">${product.badge}</span>`;
   }
 
-  const sizes = Array.isArray(product.sizes) ? product.sizes : ["Standard"];
-  const sizesHTML = sizes.map((s, i) => `
-    <button type="button" class="detail-size-chip ${i === 0 ? "active" : ""}" data-size="${s}" onclick="selectDetailSize('${s}')">
-      ${s}
-    </button>
-  `).join("");
+  const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
+  const sizesHTML = hasSizes
+    ? product.sizes.map((s, i) => `
+        <button type="button" class="detail-size-chip ${i === 0 ? "active" : ""}" data-size="${s}" onclick="selectDetailSize('${s}')">
+          ${s}
+        </button>
+      `).join("")
+    : "";
 
   const waLink = typeof buildWhatsAppLink === "function" ? buildWhatsAppLink(product, _selectedSize) : "#";
 
@@ -149,6 +152,7 @@ function renderProductDetailView(product) {
       <p class="detail-description">${product.description}</p>
 
       <!-- Size Selector -->
+      ${hasSizes ? `
       <div class="detail-option-group">
         <div class="detail-option-label-row">
           <label class="detail-option-label">Select Size:</label>
@@ -157,7 +161,7 @@ function renderProductDetailView(product) {
         <div class="detail-sizes-grid" id="detail-sizes-grid">
           ${sizesHTML}
         </div>
-      </div>
+      </div>` : ""}
 
       <!-- Quantity Control & Action Buttons -->
       <div class="detail-purchase-panel">
@@ -251,7 +255,9 @@ function handleDetailAddToCart() {
 
     if (result.success) {
       if (typeof showToast === "function") {
-        showToast(`Added ${_selectedQty} × ${_currentProduct.name} (Size: ${_selectedSize}) to cart! 🛍️`);
+        showToast(_selectedSize
+          ? `Added ${_selectedQty} × ${_currentProduct.name} (Size: ${_selectedSize}) to cart! 🛍️`
+          : `Added ${_selectedQty} × ${_currentProduct.name} to cart! 🛍️`);
       }
       if (typeof openCartDrawer === "function") {
         openCartDrawer();

@@ -37,12 +37,13 @@ function consolidateCartItems(items) {
   const map = new Map();
 
   for (const item of items) {
-    const key = `${item.id}___${item.size}`;
+    const key = `${item.id}___${item.size || 'no-size'}`;
     if (map.has(key)) {
       const existing = map.get(key);
       const combinedQty = existing.quantity + item.quantity;
       if (combinedQty > MAX_ITEM_QUANTITY) {
-        throw new Error(`Combined quantity for item "${item.id}" (size: ${item.size}) exceeds limit of ${MAX_ITEM_QUANTITY}.`);
+        const sizeInfo = item.size ? ` (size: ${item.size})` : '';
+        throw new Error(`Combined quantity for item "${item.id}"${sizeInfo} exceeds limit of ${MAX_ITEM_QUANTITY}.`);
       }
       existing.quantity = combinedQty;
     } else {
@@ -147,11 +148,21 @@ module.exports = async function handler(req, res) {
       }
 
       // Validate size variant against database record
-      if (Array.isArray(dbProduct.sizes) && dbProduct.sizes.length > 0) {
-        if (!dbProduct.sizes.includes(reqItem.size)) {
+      const hasProductSizes = Array.isArray(dbProduct.sizes) && dbProduct.sizes.length > 0;
+      if (hasProductSizes) {
+        if (!reqItem.size || !dbProduct.sizes.includes(reqItem.size)) {
           return res.status(400).json({
             success: false,
-            error: `Invalid size "${reqItem.size}" for product "${dbProduct.product_name}". Permitted sizes: ${dbProduct.sizes.join(', ')}`
+            error: reqItem.size
+              ? `Invalid size "${reqItem.size}" for product "${dbProduct.product_name}". Permitted sizes: ${dbProduct.sizes.join(', ')}`
+              : `Size selection is required for product "${dbProduct.product_name}". Permitted sizes: ${dbProduct.sizes.join(', ')}`
+          });
+        }
+      } else {
+        if (reqItem.size !== null && reqItem.size !== undefined && reqItem.size !== '') {
+          return res.status(400).json({
+            success: false,
+            error: `Product "${dbProduct.product_name}" does not support size selection, but size "${reqItem.size}" was provided.`
           });
         }
       }

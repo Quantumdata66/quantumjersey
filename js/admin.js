@@ -789,13 +789,27 @@ function updatePublishSteps() {
     stepUpload.classList.remove("done");
   }
 
+  const hasSizes   = document.getElementById("prod-has-sizes")?.checked ?? true;
+  const sizesInput = document.getElementById("prod-sizes");
+  const sizesGroup = document.getElementById("prod-sizes-group");
+  const sizesLabel = document.getElementById("prod-sizes-label");
+  if (sizesGroup) {
+    sizesGroup.style.display = hasSizes ? "block" : "none";
+  }
+  if (sizesInput) {
+    sizesInput.required = hasSizes;
+  }
+  if (sizesLabel) {
+    sizesLabel.textContent = hasSizes ? "Sizes *" : "Sizes";
+  }
+
   const name        = document.getElementById("prod-name")?.value.trim();
   const category    = document.getElementById("prod-category")?.value;
   const price       = document.getElementById("prod-price")?.value.trim();
-  const sizes       = document.getElementById("prod-sizes")?.value.trim();
+  const sizes       = sizesInput?.value.trim();
   const description = document.getElementById("prod-desc")?.value.trim();
 
-  if (name && category && price && sizes && description) {
+  if (name && category && price && (!hasSizes || sizes) && description) {
     stepDetails.classList.add("done");
   } else {
     stepDetails.classList.remove("done");
@@ -810,12 +824,13 @@ async function handlePublish(e) {
   const name        = document.getElementById("prod-name").value.trim();
   const category    = document.getElementById("prod-category").value;
   const priceRaw    = document.getElementById("prod-price").value.trim();
-  const sizesRaw    = document.getElementById("prod-sizes").value.trim();
+  const hasSizes    = document.getElementById("prod-has-sizes")?.checked ?? true;
+  const sizesRaw    = document.getElementById("prod-sizes")?.value.trim() || "";
   const description = document.getElementById("prod-desc").value.trim();
   const badge       = document.getElementById("prod-badge").value.trim() || null;
   const featured    = document.getElementById("prod-featured").checked;
 
-  if (!name || !category || !priceRaw || !sizesRaw || !description) {
+  if (!name || !category || !priceRaw || (hasSizes && !sizesRaw) || !description) {
     showMsg("Please fill in all required fields.", "error"); return;
   }
   if (!_uploadedFile) {
@@ -826,7 +841,7 @@ async function handlePublish(e) {
   if (isNaN(price) || price < 1) {
     showMsg("Please enter a valid price.", "error"); return;
   }
-  const sizes = sizesRaw.split(",").map(s => s.trim()).filter(Boolean);
+  const sizes = hasSizes ? sizesRaw.split(",").map(s => s.trim()).filter(Boolean) : [];
 
   const btn = document.getElementById("publish-btn");
   btn.disabled    = true;
@@ -900,7 +915,7 @@ async function loadAdminProductList() {
           <strong>${p.name}</strong>
           <span class="admin-cat-tag">${getCategoryLabel(p.category)}</span>
           <span class="admin-price">₦${p.price.toLocaleString()}</span>
-          <span class="admin-sizes">Sizes: ${(p.sizes || []).join(", ")}</span>
+          <span class="admin-sizes">${(Array.isArray(p.sizes) && p.sizes.length > 0) ? `Sizes: ${p.sizes.join(", ")}` : '<span style="color:var(--text-muted);">No size required</span>'}</span>
           ${p.featured ? '<span class="admin-featured-tag">⭐ Featured</span>' : ""}
         </div>
         <div class="admin-row-actions">

@@ -799,6 +799,53 @@ async function runStage4TestSuite() {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // 13. Stage 2 Optional Sizing: Non-sized products checkout with null size without inventing "Standard"
+  // ─────────────────────────────────────────────────────────────
+  try {
+    const { mockStorage } = setupMockEnvironment();
+    // Non-sized product in cart
+    mockStorage.setItem('qj_cart_v1', JSON.stringify([
+      { id: 'c4444444-4444-4444-8444-444444444444', name: 'Coach Tactical Board', size: null, quantity: 1, price: 15000 }
+    ]));
+
+    let capturedInitPayload = null;
+    global.fetch = async (url, opts) => {
+      if (url === '/api/paystack/initialize') {
+        capturedInitPayload = JSON.parse(opts.body);
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            authorization_url: 'https://checkout.paystack.com/mock-non-sized',
+            reference: 'QJ-PAY-NONSIZED',
+            order_ref: 'QJ-ORD-NONSIZED'
+          })
+        };
+      }
+      return { ok: false };
+    };
+
+    cartUI.handlePaymentMethodChange('paystack');
+    elementRegistry.get('co-name').value = 'Coach Musa';
+    elementRegistry.get('co-email').value = 'musa@example.com';
+    elementRegistry.get('co-phone').value = '+2348011223344';
+    elementRegistry.get('co-state').value = 'Lagos';
+    elementRegistry.get('co-city').value = 'Surulere';
+    elementRegistry.get('co-address').value = 'National Stadium';
+
+    await cartUI.handleCheckoutSubmit({ preventDefault: () => {} });
+
+    assert(capturedInitPayload !== null, 'Paystack init request was sent');
+    assert.strictEqual(capturedInitPayload.items[0].id, 'c4444444-4444-4444-8444-444444444444');
+    assert.strictEqual(capturedInitPayload.items[0].size, null, 'Non-sized item size is null without inventing Standard');
+    assert.strictEqual(capturedInitPayload.items[0].quantity, 1);
+
+    reportPass(13, 'Non-sized product checkout sends null size without inventing "Standard"');
+  } catch (err) {
+    reportFail(13, 'Non-sized product checkout test failed', err);
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // Final Results
   // ─────────────────────────────────────────────────────────────
   console.log('\n================================================================');

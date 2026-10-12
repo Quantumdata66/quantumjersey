@@ -37,9 +37,9 @@ function saveCartItems(items) {
 /**
  * Generate a unique line key distinguishing product ID, selected size, and color.
  */
-function generateLineKey(productId, size = "Default", color = "Default") {
+function generateLineKey(productId, size = null, color = "Default") {
   const cleanId = String(productId).trim();
-  const cleanSize = String(size || "Default").trim();
+  const cleanSize = size ? String(size).trim() : "none";
   const cleanColor = String(color || "Default").trim();
   return `${cleanId}___${cleanSize}___${cleanColor}`;
 }
@@ -69,13 +69,13 @@ function addToCart(productOrId, size = null, quantity = 1, metadata = {}) {
   }
 
   // Determine size
-  let selectedSize = size;
-  if (!selectedSize) {
-    if (product && Array.isArray(product.sizes) && product.sizes.length > 0) {
-      selectedSize = product.sizes[0];
-    } else {
-      selectedSize = "Standard";
-    }
+  let selectedSize = null;
+  const hasSizes = product && Array.isArray(product.sizes) && product.sizes.length > 0;
+  if (hasSizes) {
+    selectedSize = size || product.sizes[0];
+  } else {
+    // Non-sized product: do not invent a customer-selected size
+    selectedSize = null;
   }
 
   const cleanQty = Math.max(1, parseInt(quantity, 10) || 1);

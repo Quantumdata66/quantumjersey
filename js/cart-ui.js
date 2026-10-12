@@ -365,7 +365,7 @@ function renderCartDrawer() {
             </button>
           </div>
           <div class="cart-item-meta">
-            <span class="cart-meta-size">Size: <strong>${item.size || "Standard"}</strong></span>
+            ${item.size ? `<span class="cart-meta-size">Size: <strong>${item.size}</strong></span>` : ""}
             ${item.color && item.color !== "Default" ? `<span class="cart-meta-color">• Color: ${item.color}</span>` : ""}
           </div>
           <div class="cart-item-bottom">
@@ -716,7 +716,7 @@ async function handleCheckoutSubmit(event) {
         id: item.id,
         name: item.name,
         category: item.category || "gear",
-        size: item.size || "Standard",
+        size: item.size || null,
         color: item.color || "Default",
         quantity: item.quantity,
         price: item.price,
@@ -783,7 +783,7 @@ async function handleCheckoutSubmit(event) {
     },
     items: items.map(item => ({
       id: item.id,
-      size: item.size || "Standard",
+      size: item.size || null,
       quantity: parseInt(item.quantity, 10) || 1
     })),
     callback_url: window.location.origin + cleanReturnPath
@@ -854,9 +854,9 @@ function saveCheckoutSnapshot(reference, orderRef, items) {
       orderRef,
       initiatedAt: Date.now(),
       items: (items || []).map(item => ({
-        lineKey: item.lineKey || `${item.id}___${item.size || "Standard"}___${item.color || "Default"}`,
+        lineKey: item.lineKey || `${item.id}___${item.size ? item.size : "none"}___${item.color || "Default"}`,
         id: item.id,
-        size: item.size || "Standard",
+        size: item.size || null,
         color: item.color || "Default",
         quantity: parseInt(item.quantity, 10) || 1
       }))
@@ -951,7 +951,7 @@ function reconcilePaidCartItems(reference) {
   // 4. Subtract only the paid quantities
   const paidMap = new Map();
   for (const pItem of snapshot.items) {
-    const key = pItem.lineKey || `${pItem.id}___${pItem.size || "Standard"}___Default`;
+    const key = pItem.lineKey || `${pItem.id}___${pItem.size ? pItem.size : "none"}___Default`;
     paidMap.set(key, (paidMap.get(key) || 0) + pItem.quantity);
   }
 
@@ -959,8 +959,11 @@ function reconcilePaidCartItems(reference) {
 
   for (const cItem of currentItems) {
     const directKey = cItem.lineKey;
-    const compositeKey = `${cItem.id}___${cItem.size || "Standard"}___${cItem.color || "Default"}`;
-    const altCompositeKey = `${cItem.id}___${cItem.size || "Standard"}___Default`;
+    const itemSize = cItem.size ? cItem.size : "none";
+    const compositeKey = `${cItem.id}___${itemSize}___${cItem.color || "Default"}`;
+    const altCompositeKey = `${cItem.id}___${itemSize}___Default`;
+    const legacyCompositeKey = `${cItem.id}___${cItem.size || "Standard"}___${cItem.color || "Default"}`;
+    const legacyAltKey = `${cItem.id}___${cItem.size || "Standard"}___Default`;
 
     let paidQty = 0;
     let matchedKey = null;
@@ -974,6 +977,12 @@ function reconcilePaidCartItems(reference) {
     } else if (paidMap.has(altCompositeKey)) {
       paidQty = paidMap.get(altCompositeKey);
       matchedKey = altCompositeKey;
+    } else if (paidMap.has(legacyCompositeKey)) {
+      paidQty = paidMap.get(legacyCompositeKey);
+      matchedKey = legacyCompositeKey;
+    } else if (paidMap.has(legacyAltKey)) {
+      paidQty = paidMap.get(legacyAltKey);
+      matchedKey = legacyAltKey;
     }
 
     if (paidQty > 0) {

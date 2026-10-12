@@ -252,10 +252,12 @@ function buildWhatsAppLink(product, size) {
   const productPrice = typeof product.price === "number" ? product.price : (parseInt(product.price, 10) || 0);
   const prodUrl = buildProductUrl(product.id);
 
+  const sizeLine = size ? `📏 Size: *${size}*\n` : "";
+
   const msg = encodeURIComponent(
     `Hello Quantum Jersey! 👋\n\nI'd like to order:\n\n` +
     `🛍️ *${productName}*\n` +
-    `📏 Size: *${size || "Please advise"}*\n` +
+    sizeLine +
     `💰 Price: *${formatPrice(productPrice)}*\n` +
     `🔗 Product Link: ${prodUrl}\n` +
     `📍 Delivery Location: [Enter State/City, e.g. Lagos, Kaduna]\n\n` +
@@ -280,8 +282,12 @@ function buildMultiItemWhatsAppMessage(orderData, items) {
   (items || []).forEach((item, index) => {
     const itemSubtotal = (item.price || 0) * (item.quantity || 1);
     const link = buildProductUrl(item.id);
+    const sizePart = item.size ? `   • Size: *${item.size}*` : "";
+    const colorPart = (item.color && item.color !== "Default") ? (sizePart ? ` | Color: ${item.color}` : `   • Color: ${item.color}`) : "";
+    const variantLine = (sizePart || colorPart) ? `${sizePart}${colorPart}\n` : "";
+
     itemsText += `\n${index + 1}. *${item.name}*\n` +
-                 `   • Size: *${item.size || "Standard"}*` + (item.color && item.color !== "Default" ? ` | Color: ${item.color}` : "") + `\n` +
+                 variantLine +
                  `   • Qty: ${item.quantity} × ${formatPrice(item.price)} = *${formatPrice(itemSubtotal)}*\n` +
                  `   • Link: ${link}\n`;
   });

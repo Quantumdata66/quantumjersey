@@ -102,9 +102,13 @@ function validateItems(items) {
       return { valid: false, error: `Item at index ${i} has an invalid quantity (must be between 1 and 50).` };
     }
 
-    let cleanSize = 'Standard';
-    if (size && typeof size === 'string') {
-      cleanSize = size.trim().slice(0, 50);
+    let cleanSize = null;
+    if (size !== null && size !== undefined && size !== '') {
+      if (typeof size === 'string') {
+        cleanSize = size.trim().slice(0, 50) || null;
+      } else {
+        return { valid: false, error: `Item at index ${i} has an invalid size format.` };
+      }
     }
 
     cleanItems.push({

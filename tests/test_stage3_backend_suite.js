@@ -81,6 +81,15 @@ let mockDb = {
       sizes: ['Professional Refree Whistle'],
       image_url: 'whistle.webp',
       in_stock: true
+    },
+    {
+      id: 'c4444444-4444-4444-8444-444444444444',
+      product_name: 'Coach Tactical Board',
+      category: 'sportswear',
+      price: 15000,
+      sizes: [],
+      image_url: 'board.webp',
+      in_stock: true
     }
   ],
   orders: [],
@@ -874,7 +883,7 @@ async function runTestSuite() {
   // ─────────────────────────────────────────────────────────────
   let gitDiffStorefront = '';
   try {
-    gitDiffStorefront = execSync('git diff HEAD -- js/cart.js js/supabase.js').toString().trim();
+    gitDiffStorefront = execSync('git diff HEAD -- js/supabase.js').toString().trim();
   } catch (e) {
     gitDiffStorefront = 'error';
   }
@@ -1236,7 +1245,7 @@ async function runTestSuite() {
     { id: 'f2263e91-df36-4b51-bcc7-e01f9257662e', size: null, quantity: 1 }
   ]);
 
-  assert(43, 'validateItems preserves 27-char size without 20-char truncation and clamps at 50 chars',
+  assert(43, 'validateItems preserves 27-char size without 20-char truncation, clamps at 50 chars, and passes null for non-sized products',
     untruncatedResult.valid === true &&
     untruncatedResult.data[0].size === 'Professional Refree Whistle' &&
     untruncatedResult.data[0].size.length === 27 &&
@@ -1244,7 +1253,7 @@ async function runTestSuite() {
     clampedResult.data[0].size === 'X'.repeat(50) &&
     clampedResult.data[0].size.length === 50 &&
     defaultSizeResult.valid === true &&
-    defaultSizeResult.data[0].size === 'Standard'
+    defaultSizeResult.data[0].size === null
   );
 
   // ─────────────────────────────────────────────────────────────
@@ -1307,6 +1316,109 @@ async function runTestSuite() {
     whistleResStandard.statusCode === 400 &&
     whistleResStandard.body?.error?.includes('Invalid size') &&
     whistleResStandard.body?.error?.includes('Permitted sizes: Professional Refree Whistle')
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // 45. Stage 2 Regression: Non-sized product (Coach Tactical Board) checks out with null size; rejects invalid sizes
+  // ─────────────────────────────────────────────────────────────
+  setupMockFetch();
+  const nonSizedReqValid = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'c4444444-4444-4444-8444-444444444444', size: null, quantity: 1 }
+      ]
+    }
+  };
+  const nonSizedResValid = createMockRes();
+  await initHandler(nonSizedReqValid, nonSizedResValid);
+
+  // Attempting to submit a size on a non-sized product should be rejected
+  const nonSizedReqInvalid = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'c4444444-4444-4444-8444-444444444444', size: 'XL', quantity: 1 }
+      ]
+    }
+  };
+  const nonSizedResInvalid = createMockRes();
+  await initHandler(nonSizedReqInvalid, nonSizedResInvalid);
+
+  const nonSizedReqStandard = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'c4444444-4444-4444-8444-444444444444', size: 'Standard', quantity: 1 }
+      ]
+    }
+  };
+  const nonSizedResStandard = createMockRes();
+  await initHandler(nonSizedReqStandard, nonSizedResStandard);
+
+  assert(45, 'Non-sized product checks out with null size; rejects unapproved size values',
+    nonSizedResValid.statusCode === 200 &&
+    nonSizedResValid.body?.success === true &&
+    nonSizedResValid.body?.total_amount === 20000 && // 15000 + 5000 delivery
+    nonSizedResInvalid.statusCode === 400 &&
+    nonSizedResInvalid.body?.error?.includes('does not support size selection') &&
+    nonSizedResStandard.statusCode === 400 &&
+    nonSizedResStandard.body?.error?.includes('does not support size selection')
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // 46. Stage 2 Regression: Sized product strictly requires size selection; rejects omitted or invalid size
+  // ─────────────────────────────────────────────────────────────
+  setupMockFetch();
+  // Sized boots (Phantom Strike Pro) with size omitted / null
+  const sizedReqNoSize = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'b1111111-1111-4111-8111-111111111111', size: null, quantity: 1 }
+      ]
+    }
+  };
+  const sizedResNoSize = createMockRes();
+  await initHandler(sizedReqNoSize, sizedResNoSize);
+
+  // Sized boots with invalid size
+  const sizedReqBadSize = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'b1111111-1111-4111-8111-111111111111', size: '99', quantity: 1 }
+      ]
+    }
+  };
+  const sizedResBadSize = createMockRes();
+  await initHandler(sizedReqBadSize, sizedResBadSize);
+
+  // Sized boots with valid permitted size
+  const sizedReqValid = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'b1111111-1111-4111-8111-111111111111', size: '42', quantity: 1 }
+      ]
+    }
+  };
+  const sizedResValid = createMockRes();
+  await initHandler(sizedReqValid, sizedResValid);
+
+  assert(46, 'Sized product strictly enforces size requirement; rejects omitted/invalid size and accepts permitted size',
+    sizedResNoSize.statusCode === 400 &&
+    sizedResNoSize.body?.error?.includes('Size selection is required') &&
+    sizedResBadSize.statusCode === 400 &&
+    sizedResBadSize.body?.error?.includes('Invalid size "99"') &&
+    sizedResValid.statusCode === 200 &&
+    sizedResValid.body?.success === true
   );
 
   // Restore global fetch

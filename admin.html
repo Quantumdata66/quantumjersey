@@ -683,8 +683,16 @@
                 <input type="number" id="prod-price" placeholder="e.g. 45000" min="1" required/>
               </div>
               <div class="form-field">
-                <label for="prod-sizes">Sizes *</label>
-                <input type="text" id="prod-sizes" placeholder="e.g. 40, 41, 42 or S, M, L" required/>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                  <label for="prod-sizes" id="prod-sizes-label" style="margin:0;">Sizes *</label>
+                  <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-secondary);cursor:pointer;margin:0;">
+                    <input type="checkbox" id="prod-has-sizes" checked style="width:15px;height:15px;accent-color:var(--accent-green);"/>
+                    Requires Sizing
+                  </label>
+                </div>
+                <div id="prod-sizes-group">
+                  <input type="text" id="prod-sizes" placeholder="e.g. 40, 41, 42 or S, M, L" required/>
+                </div>
               </div>
               <div class="form-field">
                 <label for="prod-badge">Badge</label>

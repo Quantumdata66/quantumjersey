@@ -49,14 +49,17 @@ function createProductCard(product) {
     badgeHTML += `<span class="card-badge badge-urgent" style="left:auto;right:14px;">🔥 LOW STOCK</span>`;
   }
 
-  const sizesHTML = product.sizes
-    .map((s, i) => `<label class="size-chip">
+  const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
+  const sizesHTML = hasSizes
+    ? product.sizes
+        .map((s, i) => `<label class="size-chip">
           <input type="radio" name="size-${product.id}" value="${s}" ${i === 0 ? "checked" : ""}/>
           <span>${s}</span>
         </label>`)
-    .join("");
+        .join("")
+    : "";
 
-  const defaultSize = product.sizes[0];
+  const defaultSize = hasSizes ? product.sizes[0] : null;
   const waLink = typeof buildWhatsAppLink === "function" ? buildWhatsAppLink(product, defaultSize) : "#";
   const detailUrl = `product.html?id=${encodeURIComponent(product.id)}`;
 
@@ -78,10 +81,11 @@ function createProductCard(product) {
           <a href="${detailUrl}" class="card-title-link">${product.name}</a>
         </h3>
         <p class="card-desc">${product.description}</p>
+        ${hasSizes ? `
         <div class="card-sizes">
           <p class="sizes-label">Select Size:</p>
           <div class="sizes-grid">${sizesHTML}</div>
-        </div>
+        </div>` : ""}
         <div class="card-footer">
           <p class="card-price">${formatPrice(product.price)}</p>
           <div class="card-btn-group">
@@ -112,9 +116,10 @@ function handleCardAddToCart(event, productId) {
   event.stopPropagation();
   event.preventDefault();
 
-  const selected = document.querySelector(`input[name="size-${productId}"]:checked`);
-  const size = selected ? selected.value : null;
   const product = (typeof getProductById === "function") ? getProductById(productId) : null;
+  const hasSizes = product && Array.isArray(product.sizes) && product.sizes.length > 0;
+  const selected = hasSizes ? document.querySelector(`input[name="size-${productId}"]:checked`) : null;
+  const size = selected ? selected.value : (hasSizes ? product.sizes[0] : null);
 
   if (product && typeof addToCart === "function") {
     const res = addToCart(product, size, 1, {
@@ -126,7 +131,7 @@ function handleCardAddToCart(event, productId) {
 
     if (res.success) {
       if (typeof showToast === "function") {
-        showToast(`Added ${product.name} (${size || "Standard"}) to cart! 🛍️`);
+        showToast(size ? `Added ${product.name} (${size}) to cart! 🛍️` : `Added ${product.name} to cart! 🛍️`);
       }
       if (typeof openCartDrawer === "function") {
         openCartDrawer();
