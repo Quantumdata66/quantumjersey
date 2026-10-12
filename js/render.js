@@ -81,13 +81,16 @@ function createProductCard(product) {
           <a href="${detailUrl}" class="card-title-link">${product.name}</a>
         </h3>
         <p class="card-desc">${product.description}</p>
-        ${hasSizes ? `
+        ${product.versions ? `
+        <div class="card-sizes">
+          <p class="sizes-label" style="color:var(--accent-green);font-weight:600;font-size:0.78rem;">✨ Fan & Player Editions Available</p>
+        </div>` : (hasSizes ? `
         <div class="card-sizes">
           <p class="sizes-label">Select Size:</p>
           <div class="sizes-grid">${sizesHTML}</div>
-        </div>` : ""}
+        </div>` : "")}
         <div class="card-footer">
-          <p class="card-price">${formatPrice(product.price)}</p>
+          <p class="card-price">${product.versions ? `From ${formatPrice(product.versions.fan.price)}` : formatPrice(product.price)}</p>
           <div class="card-btn-group">
             <button type="button" class="btn-card-cart" onclick="handleCardAddToCart(event, '${product.id}')" title="Add to Cart" aria-label="Add ${product.name} to cart">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -117,6 +120,12 @@ function handleCardAddToCart(event, productId) {
   event.preventDefault();
 
   const product = (typeof getProductById === "function") ? getProductById(productId) : null;
+  if (product && product.versions) {
+    // Versioned products require explicit edition and size selection on detail page
+    window.location.href = `product.html?id=${encodeURIComponent(productId)}`;
+    return;
+  }
+
   const hasSizes = product && Array.isArray(product.sizes) && product.sizes.length > 0;
   const selected = hasSizes ? document.querySelector(`input[name="size-${productId}"]:checked`) : null;
   const size = selected ? selected.value : (hasSizes ? product.sizes[0] : null);

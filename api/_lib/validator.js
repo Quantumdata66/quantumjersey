@@ -111,9 +111,19 @@ function validateItems(items) {
       }
     }
 
+    let cleanVersion = null;
+    if (item.version !== null && item.version !== undefined && item.version !== '') {
+      if (typeof item.version === 'string') {
+        cleanVersion = item.version.trim().slice(0, 50) || null;
+      } else {
+        return { valid: false, error: `Item at index ${i} has an invalid version format.` };
+      }
+    }
+
     cleanItems.push({
       id: id.trim(),
       size: cleanSize,
+      version: cleanVersion,
       quantity: parsedQty
     });
   }
@@ -597,6 +607,158 @@ function resolveTrustedCallbackUrl(clientProvidedUrlOrPath) {
   };
 }
 
+// ─── Jersey Versions Helper Functions ─────────────────────────
+
+const VERSION_METADATA_REGEX = /(?:\r?\n\r?\n)?<!--QJ_VERSIONS:([\s\S]*?)-->/;
+
+/**
+ * Normalizes a user- or client-supplied version string into 'fan' or 'player'.
+ */
+function normalizeVersionKey(versionStr) {
+  if (!versionStr || typeof versionStr !== "string") return null;
+  const clean = versionStr.trim().toLowerCase();
+  if (clean === "fan" || clean === "fan version" || clean === "fan_version") return "fan";
+  if (clean === "player" || clean === "player version" || clean === "player_version") return "player";
+  return null;
+}
+
+/**
+ * Parses and validates version configuration from a product object or raw description.
+ *
+ * @param {Object|string} productOrRaw
+ * @returns {{ isVersioned: boolean, versions: Object|null, isCorrupt: boolean, error?: string }}
+ */
+function parseProductVersions(productOrRaw) {
+  if (!productOrRaw) {
+    return { isVersioned: false, versions: null, isCorrupt: false };
+  }
+
+  // If already an object with validated versions property
+  if (typeof productOrRaw === "object" && productOrRaw !== null) {
+    if (productOrRaw.isVersionCorrupt) {
+      return { isVersioned: false, versions: null, isCorrupt: true, error: "Product has corrupt version metadata." };
+    }
+    if (productOrRaw.versions && typeof productOrRaw.versions === "object") {
+      const v = productOrRaw.versions;
+      const fanValid = v.fan && typeof v.fan === "object" && parseInt(v.fan.price, 10) > 0 && Array.isArray(v.fan.sizes) && v.fan.sizes.length > 0;
+      const playerValid = v.player && typeof v.player === "object" && parseInt(v.player.price, 10) > 0 && Array.isArray(v.player.sizes) && v.player.sizes.length > 0;
+      if (fanValid || playerValid) {
+        return { isVersioned: true, versions: v, isCorrupt: false };
+      }
+    }
+    productOrRaw = productOrRaw.description || "";
+  }
+
+  if (typeof productOrRaw !== "string") {
+    return { isVersioned: false, versions: null, isCorrupt: false };
+  }
+
+  // Reject ambiguous duplicate or unclosed metadata markers
+  const markerCount = (productOrRaw.match(/<!--QJ_VERSIONS:/g) || []).length;
+  if (markerCount > 1) {
+    return { isVersioned: false, versions: null, isCorrupt: true, error: "Ambiguous duplicate version metadata markers detected." };
+  }
+
+  const match = productOrRaw.match(VERSION_METADATA_REGEX);
+  if (!match) {
+    if (markerCount === 1) {
+      return { isVersioned: false, versions: null, isCorrupt: true, error: "Malformed or unclosed version metadata marker." };
+    }
+    return { isVersioned: false, versions: null, isCorrupt: false };
+  }
+
+  try {
+    const parsed = JSON.parse(match[1]);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { isVersioned: false, versions: null, isCorrupt: true, error: "Invalid versions metadata payload." };
+    }
+
+    const validated = {};
+    if (parsed.fan) {
+      const price = parseInt(parsed.fan.price, 10);
+      const sizes = Array.isArray(parsed.fan.sizes)
+        ? parsed.fan.sizes.map(s => String(s).trim()).filter(Boolean)
+        : [];
+      if (isNaN(price) || price <= 0 || sizes.length === 0) {
+        return { isVersioned: false, versions: null, isCorrupt: true, error: "Invalid Fan Version configuration." };
+      }
+      validated.fan = {
+        label: parsed.fan.label || "Fan Version",
+        price,
+        sizes
+      };
+    }
+
+    if (parsed.player) {
+      const price = parseInt(parsed.player.price, 10);
+      const sizes = Array.isArray(parsed.player.sizes)
+        ? parsed.player.sizes.map(s => String(s).trim()).filter(Boolean)
+        : [];
+      if (isNaN(price) || price <= 0 || sizes.length === 0) {
+        return { isVersioned: false, versions: null, isCorrupt: true, error: "Invalid Player Version configuration." };
+      }
+      validated.player = {
+        label: parsed.player.label || "Player Version",
+        price,
+        sizes
+      };
+    }
+
+    if (validated.fan || validated.player) {
+      return { isVersioned: true, versions: validated, isCorrupt: false };
+    }
+
+    return { isVersioned: false, versions: null, isCorrupt: true, error: "Empty versions definition." };
+  } catch (err) {
+    return { isVersioned: false, versions: null, isCorrupt: true, error: err.message };
+  }
+}
+
+/**
+ * Strips any embedded version metadata comments from product description.
+ * Always returns clean, user-facing marketing copy.
+ */
+function cleanProductDescription(description) {
+  if (!description || typeof description !== "string") return "";
+  return description
+    .replace(/(?:\r?\n\r?\n)?<!--QJ_VERSIONS:[\s\S]*?-->/g, "")
+    .replace(/(?:\r?\n\r?\n)?<!--QJ_VERSIONS:[\s\S]*$/g, "")
+    .trim();
+}
+
+/**
+ * Formats clean marketing text and appends the validated version metadata comment.
+ */
+function formatProductDescription(cleanDescription, versions) {
+  const baseDesc = cleanProductDescription(cleanDescription || "");
+  if (!versions || typeof versions !== "object") {
+    return baseDesc;
+  }
+
+  const payload = {};
+  if (versions.fan && parseInt(versions.fan.price, 10) > 0 && Array.isArray(versions.fan.sizes) && versions.fan.sizes.length > 0) {
+    payload.fan = {
+      label: versions.fan.label || "Fan Version",
+      price: parseInt(versions.fan.price, 10),
+      sizes: versions.fan.sizes.map(s => String(s).trim()).filter(Boolean)
+    };
+  }
+  if (versions.player && parseInt(versions.player.price, 10) > 0 && Array.isArray(versions.player.sizes) && versions.player.sizes.length > 0) {
+    payload.player = {
+      label: versions.player.label || "Player Version",
+      price: parseInt(versions.player.price, 10),
+      sizes: versions.player.sizes.map(s => String(s).trim()).filter(Boolean)
+    };
+  }
+
+  if (Object.keys(payload).length === 0) {
+    return baseDesc;
+  }
+
+  const json = JSON.stringify(payload);
+  return baseDesc ? `${baseDesc}\n\n<!--QJ_VERSIONS:${json}-->` : `<!--QJ_VERSIONS:${json}-->`;
+}
+
 module.exports = {
   validateCustomer,
   validateItems,
@@ -610,6 +772,11 @@ module.exports = {
   PREVIEW_HOSTNAME_PATTERN,
   getTrustedPreviewHostname,
   EMAIL_REGEX,
-  UUID_REGEX
+  UUID_REGEX,
+  VERSION_METADATA_REGEX,
+  normalizeVersionKey,
+  parseProductVersions,
+  cleanProductDescription,
+  formatProductDescription
 };
 

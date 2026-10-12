@@ -4,7 +4,14 @@
 // ============================================================
 
 const crypto = require('crypto');
-const { validateCustomer, validateItems, resolveTrustedCallbackUrl, validateRequestOrigin } = require('../_lib/validator');
+const {
+  validateCustomer,
+  validateItems,
+  resolveTrustedCallbackUrl,
+  validateRequestOrigin,
+  parseProductVersions,
+  normalizeVersionKey
+} = require('../_lib/validator');
 const { getProductsByIds, createOrderAndAttempt, cancelOrderAndAttempt } = require('../_lib/supabase');
 const { initializeTransaction } = require('../_lib/paystack');
 
@@ -30,20 +37,23 @@ function generatePaymentReference() {
 }
 
 /**
- * Normalizes and consolidates duplicate cart items by (id, size).
+ * Normalizes and consolidates duplicate cart items by (id, version, size).
  * Enforces maximum aggregate quantity per line item.
  */
 function consolidateCartItems(items) {
   const map = new Map();
 
   for (const item of items) {
-    const key = `${item.id}___${item.size || 'no-size'}`;
+    const normVer = item.version ? String(item.version).trim().toLowerCase() : 'no-version';
+    const normSize = item.size ? String(item.size).trim() : 'no-size';
+    const key = `${item.id}___${normVer}___${normSize}`;
     if (map.has(key)) {
       const existing = map.get(key);
       const combinedQty = existing.quantity + item.quantity;
       if (combinedQty > MAX_ITEM_QUANTITY) {
+        const verInfo = item.version ? ` (${item.version})` : '';
         const sizeInfo = item.size ? ` (size: ${item.size})` : '';
-        throw new Error(`Combined quantity for item "${item.id}"${sizeInfo} exceeds limit of ${MAX_ITEM_QUANTITY}.`);
+        throw new Error(`Combined quantity for item "${item.id}"${verInfo}${sizeInfo} exceeds limit of ${MAX_ITEM_QUANTITY}.`);
       }
       existing.quantity = combinedQty;
     } else {
@@ -147,27 +157,75 @@ module.exports = async function handler(req, res) {
         });
       }
 
-      // Validate size variant against database record
-      const hasProductSizes = Array.isArray(dbProduct.sizes) && dbProduct.sizes.length > 0;
-      if (hasProductSizes) {
-        if (!reqItem.size || !dbProduct.sizes.includes(reqItem.size)) {
+      // Check version configuration
+      const versionResult = parseProductVersions(dbProduct);
+      if (versionResult.isCorrupt) {
+        return res.status(500).json({
+          success: false,
+          error: `Product "${dbProduct.product_name}" has corrupt version metadata.`
+        });
+      }
+
+      let unitPrice = 0;
+      let itemVersionLabel = null;
+
+      if (versionResult.isVersioned) {
+        // Configured jersey with versions
+        const verKey = normalizeVersionKey(reqItem.version);
+        if (!verKey || !versionResult.versions[verKey]) {
+          const supportedLabels = Object.values(versionResult.versions).map(v => v.label).join(', ');
+          return res.status(400).json({
+            success: false,
+            error: `Version selection is required for "${dbProduct.product_name}". Supported versions: ${supportedLabels}`
+          });
+        }
+
+        const verConfig = versionResult.versions[verKey];
+        itemVersionLabel = verConfig.label;
+
+        // Size validation against version-specific allowed sizes
+        const allowedSizes = verConfig.sizes || [];
+        if (!reqItem.size || !allowedSizes.includes(reqItem.size)) {
           return res.status(400).json({
             success: false,
             error: reqItem.size
-              ? `Invalid size "${reqItem.size}" for product "${dbProduct.product_name}". Permitted sizes: ${dbProduct.sizes.join(', ')}`
-              : `Size selection is required for product "${dbProduct.product_name}". Permitted sizes: ${dbProduct.sizes.join(', ')}`
+              ? `Invalid size "${reqItem.size}" for ${verConfig.label} of "${dbProduct.product_name}". Permitted sizes: ${allowedSizes.join(', ')}`
+              : `Size selection is required for ${verConfig.label} of "${dbProduct.product_name}". Permitted sizes: ${allowedSizes.join(', ')}`
           });
         }
+
+        unitPrice = parseInt(verConfig.price, 10);
       } else {
-        if (reqItem.size !== null && reqItem.size !== undefined && reqItem.size !== '') {
+        // Ordinary product (no versions)
+        if (reqItem.version !== null && reqItem.version !== undefined && reqItem.version !== '') {
           return res.status(400).json({
             success: false,
-            error: `Product "${dbProduct.product_name}" does not support size selection, but size "${reqItem.size}" was provided.`
+            error: `Product "${dbProduct.product_name}" does not support version selection, but version "${reqItem.version}" was provided.`
           });
         }
+
+        const hasProductSizes = Array.isArray(dbProduct.sizes) && dbProduct.sizes.length > 0;
+        if (hasProductSizes) {
+          if (!reqItem.size || !dbProduct.sizes.includes(reqItem.size)) {
+            return res.status(400).json({
+              success: false,
+              error: reqItem.size
+                ? `Invalid size "${reqItem.size}" for product "${dbProduct.product_name}". Permitted sizes: ${dbProduct.sizes.join(', ')}`
+                : `Size selection is required for product "${dbProduct.product_name}". Permitted sizes: ${dbProduct.sizes.join(', ')}`
+            });
+          }
+        } else {
+          if (reqItem.size !== null && reqItem.size !== undefined && reqItem.size !== '') {
+            return res.status(400).json({
+              success: false,
+              error: `Product "${dbProduct.product_name}" does not support size selection, but size "${reqItem.size}" was provided.`
+            });
+          }
+        }
+
+        unitPrice = parseInt(dbProduct.price, 10);
       }
 
-      const unitPrice = parseInt(dbProduct.price, 10);
       if (isNaN(unitPrice) || unitPrice < 0) {
         return res.status(500).json({
           success: false,
@@ -182,6 +240,7 @@ module.exports = async function handler(req, res) {
         id: dbProduct.id,
         name: dbProduct.product_name,
         category: dbProduct.category,
+        version: itemVersionLabel,
         size: reqItem.size,
         quantity: reqItem.quantity,
         price: unitPrice,

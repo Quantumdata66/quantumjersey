@@ -105,7 +105,7 @@ async function getProductsByIds(ids) {
   // Filter and sanitize IDs
   const cleanIds = ids.map(id => String(id).trim()).filter(Boolean);
   const filter = `in.(${cleanIds.map(encodeURIComponent).join(',')})`;
-  const endpoint = `/products?id=${filter}&select=id,product_name,category,price,sizes,image_url,in_stock`;
+  const endpoint = `/products?id=${filter}&select=id,product_name,category,price,sizes,image_url,in_stock,description`;
 
   const products = await supabaseRequest(endpoint);
   return Array.isArray(products) ? products : [];

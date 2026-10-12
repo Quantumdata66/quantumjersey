@@ -3,6 +3,7 @@
 // ============================================================
 
 let _currentProduct = null;
+let _selectedVersion = null;
 let _selectedSize = null;
 let _selectedQty = 1;
 
@@ -47,8 +48,12 @@ async function initProductDetailPage() {
   }
 
   _currentProduct = product;
-  const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
-  _selectedSize = hasSizes ? product.sizes[0] : null;
+  const isVersioned = Boolean(product.versions);
+  _selectedVersion = isVersioned ? "fan" : null;
+  const availableSizes = isVersioned
+    ? (product.versions.fan?.sizes || [])
+    : (Array.isArray(product.sizes) ? product.sizes : []);
+  _selectedSize = availableSizes.length > 0 ? availableSizes[0] : null;
   _selectedQty = 1;
 
   // Update Page Title and Meta Tags
@@ -103,16 +108,26 @@ function renderProductDetailView(product) {
     badgeHTML = `<span class="${badgeClass}">${product.badge}</span>`;
   }
 
-  const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
+  const isVersioned = Boolean(product.versions);
+  const currentPrice = (isVersioned && _selectedVersion && product.versions[_selectedVersion])
+    ? product.versions[_selectedVersion].price
+    : product.price;
+
+  const activeSizes = isVersioned
+    ? (product.versions[_selectedVersion]?.sizes || [])
+    : (Array.isArray(product.sizes) ? product.sizes : []);
+  const hasSizes = activeSizes.length > 0;
+
   const sizesHTML = hasSizes
-    ? product.sizes.map((s, i) => `
-        <button type="button" class="detail-size-chip ${i === 0 ? "active" : ""}" data-size="${s}" onclick="selectDetailSize('${s}')">
+    ? activeSizes.map((s) => `
+        <button type="button" class="detail-size-chip ${s === _selectedSize ? "active" : ""}" data-size="${s}" onclick="selectDetailSize('${s}')">
           ${s}
         </button>
       `).join("")
     : "";
 
-  const waLink = typeof buildWhatsAppLink === "function" ? buildWhatsAppLink(product, _selectedSize) : "#";
+  const versionLabel = _selectedVersion ? (_selectedVersion === "player" ? "Player Version" : "Fan Version") : null;
+  const waLink = typeof buildWhatsAppLink === "function" ? buildWhatsAppLink(product, _selectedSize, versionLabel) : "#";
 
   container.innerHTML = `
     <!-- Left Column: Image Showcase -->
@@ -145,15 +160,32 @@ function renderProductDetailView(product) {
       </div>
 
       <div class="detail-price-box">
-        <span class="detail-price-num">${formatPrice(product.price)}</span>
+        <span class="detail-price-num">${formatPrice(currentPrice)}</span>
         <span class="detail-price-note">Tax included · Local dispatch rates apply</span>
       </div>
 
       <p class="detail-description">${product.description}</p>
 
+      <!-- Edition Selector (Fan / Player) -->
+      ${isVersioned ? `
+      <div class="detail-option-group" id="detail-version-group">
+        <div class="detail-option-label-row">
+          <label class="detail-option-label">Select Edition:</label>
+          <span class="selected-size-indicator">Edition: <strong id="current-version-display">${versionLabel}</strong></span>
+        </div>
+        <div class="detail-versions-grid" style="display:flex;gap:10px;margin-top:6px;">
+          <button type="button" class="detail-size-chip ${_selectedVersion === 'fan' ? 'active' : ''}" id="btn-edition-fan" onclick="selectDetailVersion('fan')">
+            Fan Version (${formatPrice(product.versions.fan.price)})
+          </button>
+          <button type="button" class="detail-size-chip ${_selectedVersion === 'player' ? 'active' : ''}" id="btn-edition-player" onclick="selectDetailVersion('player')">
+            Player Version (${formatPrice(product.versions.player.price)})
+          </button>
+        </div>
+      </div>` : ""}
+
       <!-- Size Selector -->
       ${hasSizes ? `
-      <div class="detail-option-group">
+      <div class="detail-option-group" id="detail-size-group">
         <div class="detail-option-label-row">
           <label class="detail-option-label">Select Size:</label>
           <span class="selected-size-indicator">Selected: <strong id="current-size-display">${_selectedSize}</strong></span>
@@ -219,12 +251,52 @@ function renderProductDetailView(product) {
 
 // ─── Interaction Handlers ────────────────────────────────────
 
+function selectDetailVersion(verKey) {
+  if (!_currentProduct || !_currentProduct.versions || !_currentProduct.versions[verKey]) return;
+  _selectedVersion = verKey;
+
+  const versionLabel = verKey === "player" ? "Player Version" : "Fan Version";
+  const versionDisplay = document.getElementById("current-version-display");
+  if (versionDisplay) versionDisplay.textContent = versionLabel;
+
+  const fanBtn = document.getElementById("btn-edition-fan");
+  const playerBtn = document.getElementById("btn-edition-player");
+  if (fanBtn) fanBtn.classList.toggle("active", verKey === "fan");
+  if (playerBtn) playerBtn.classList.toggle("active", verKey === "player");
+
+  const priceEl = document.querySelector(".detail-price-num");
+  if (priceEl) {
+    priceEl.textContent = formatPrice(_currentProduct.versions[verKey].price);
+  }
+
+  const sizes = _currentProduct.versions[verKey].sizes || [];
+  if (!sizes.includes(_selectedSize)) {
+    _selectedSize = sizes.length > 0 ? sizes[0] : null;
+  }
+  const sizeDisplay = document.getElementById("current-size-display");
+  if (sizeDisplay) sizeDisplay.textContent = _selectedSize || "None";
+
+  const sizesGrid = document.getElementById("detail-sizes-grid");
+  if (sizesGrid) {
+    sizesGrid.innerHTML = sizes.map(s => `
+      <button type="button" class="detail-size-chip ${s === _selectedSize ? "active" : ""}" data-size="${s}" onclick="selectDetailSize('${s}')">
+        ${s}
+      </button>
+    `).join("");
+  }
+
+  const waBtn = document.getElementById("detail-wa-btn");
+  if (waBtn && typeof buildWhatsAppLink === "function") {
+    waBtn.href = buildWhatsAppLink(_currentProduct, _selectedSize, versionLabel);
+  }
+}
+
 function selectDetailSize(size) {
   _selectedSize = size;
   const display = document.getElementById("current-size-display");
   if (display) display.textContent = size;
 
-  const chips = document.querySelectorAll(".detail-size-chip");
+  const chips = document.querySelectorAll("#detail-sizes-grid .detail-size-chip");
   chips.forEach(chip => {
     chip.classList.toggle("active", chip.dataset.size === size);
   });
@@ -232,7 +304,8 @@ function selectDetailSize(size) {
   // Update direct WhatsApp link
   const waBtn = document.getElementById("detail-wa-btn");
   if (waBtn && _currentProduct && typeof buildWhatsAppLink === "function") {
-    waBtn.href = buildWhatsAppLink(_currentProduct, size);
+    const versionLabel = _selectedVersion ? (_selectedVersion === "player" ? "Player Version" : "Fan Version") : null;
+    waBtn.href = buildWhatsAppLink(_currentProduct, size, versionLabel);
   }
 }
 
@@ -245,19 +318,27 @@ function changeDetailQty(delta) {
 function handleDetailAddToCart() {
   if (!_currentProduct) return;
 
+  const isVersioned = Boolean(_currentProduct.versions);
+  const versionLabel = isVersioned ? (_selectedVersion === "player" ? "Player Version" : "Fan Version") : null;
+  const activePrice = (isVersioned && _selectedVersion && _currentProduct.versions[_selectedVersion])
+    ? _currentProduct.versions[_selectedVersion].price
+    : _currentProduct.price;
+
   if (typeof addToCart === "function") {
     const result = addToCart(_currentProduct, _selectedSize, _selectedQty, {
       name: _currentProduct.name,
-      price: _currentProduct.price,
+      price: activePrice,
+      version: versionLabel,
       image: _currentProduct.image,
       category: _currentProduct.category,
     });
 
     if (result.success) {
       if (typeof showToast === "function") {
-        showToast(_selectedSize
-          ? `Added ${_selectedQty} × ${_currentProduct.name} (Size: ${_selectedSize}) to cart! 🛍️`
-          : `Added ${_selectedQty} × ${_currentProduct.name} to cart! 🛍️`);
+        const variantText = versionLabel
+          ? ` (${versionLabel}${_selectedSize ? `, Size: ${_selectedSize}` : ""})`
+          : (_selectedSize ? ` (Size: ${_selectedSize})` : "");
+        showToast(`Added ${_selectedQty} × ${_currentProduct.name}${variantText} to cart! 🛍️`);
       }
       if (typeof openCartDrawer === "function") {
         openCartDrawer();
@@ -268,7 +349,8 @@ function handleDetailAddToCart() {
 
 function handleDetailWaClick(event) {
   if (_currentProduct && typeof buildWhatsAppLink === "function") {
-    event.currentTarget.href = buildWhatsAppLink(_currentProduct, _selectedSize);
+    const versionLabel = _selectedVersion ? (_selectedVersion === "player" ? "Player Version" : "Fan Version") : null;
+    event.currentTarget.href = buildWhatsAppLink(_currentProduct, _selectedSize, versionLabel);
   }
 }
 

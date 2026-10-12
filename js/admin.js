@@ -309,7 +309,7 @@ function renderAdminOrdersList(orders, totalCount) {
 
   list.innerHTML = orders.map(order => {
     const items = Array.isArray(order.items) ? order.items : [];
-    const itemsSummary = items.map(i => `${i.quantity}x ${i.name} (${i.size || "Standard"})`).join(", ");
+    const itemsSummary = items.map(i => `${i.quantity}x ${i.name}${i.version ? ` [${i.version}]` : ""} (${i.size || "Standard"})`).join(", ");
 
     return `
       <div class="admin-order-card" id="order-card-${order.id || order.order_ref}">
@@ -456,7 +456,7 @@ async function openAdminOrderDetail(orderIdOrRef) {
                          style="width:36px;height:36px;object-fit:cover;border-radius:4px;"/>
                     <strong>${item.name}</strong>
                   </td>
-                  <td style="padding:10px 12px;"><span class="admin-cat-tag">${item.size || "Standard"}</span></td>
+                  <td style="padding:10px 12px;"><span class="admin-cat-tag">${item.version ? `${item.version} · ` : ""}${item.size || "Standard"}</span></td>
                   <td style="padding:10px 12px;">${item.quantity}</td>
                   <td style="padding:10px 12px;">${formatPrice(item.price)}</td>
                   <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--text-primary);">${formatPrice((item.price || 0) * (item.quantity || 1))}</td>
@@ -789,27 +789,59 @@ function updatePublishSteps() {
     stepUpload.classList.remove("done");
   }
 
+  const category        = document.getElementById("prod-category")?.value;
+  const isJersey        = category === "jerseys";
+  const versionsWrap    = document.getElementById("prod-jersey-versions-wrap");
+  const versionsInputs  = document.getElementById("prod-jersey-versions-inputs");
+  const hasVersionsCheck = document.getElementById("prod-has-versions");
+  const hasVersions     = isJersey && (hasVersionsCheck?.checked ?? false);
+
+  if (versionsWrap) {
+    versionsWrap.style.display = isJersey ? "block" : "none";
+  }
+  if (versionsInputs) {
+    versionsInputs.style.display = hasVersions ? "block" : "none";
+  }
+
+  const priceWrap  = document.getElementById("prod-price-wrap");
+  const priceInput = document.getElementById("prod-price");
   const hasSizes   = document.getElementById("prod-has-sizes")?.checked ?? true;
   const sizesInput = document.getElementById("prod-sizes");
   const sizesGroup = document.getElementById("prod-sizes-group");
   const sizesLabel = document.getElementById("prod-sizes-label");
-  if (sizesGroup) {
-    sizesGroup.style.display = hasSizes ? "block" : "none";
-  }
-  if (sizesInput) {
-    sizesInput.required = hasSizes;
-  }
-  if (sizesLabel) {
-    sizesLabel.textContent = hasSizes ? "Sizes *" : "Sizes";
+
+  if (hasVersions) {
+    if (priceWrap) priceWrap.style.display = "none";
+    if (sizesGroup) sizesGroup.style.display = "none";
+    if (priceInput) priceInput.required = false;
+    if (sizesInput) sizesInput.required = false;
+  } else {
+    if (priceWrap) priceWrap.style.display = "block";
+    if (priceInput) priceInput.required = true;
+    if (sizesGroup) sizesGroup.style.display = hasSizes ? "block" : "none";
+    if (sizesInput) sizesInput.required = hasSizes;
+    if (sizesLabel) sizesLabel.textContent = hasSizes ? "Sizes *" : "Sizes";
   }
 
   const name        = document.getElementById("prod-name")?.value.trim();
-  const category    = document.getElementById("prod-category")?.value;
-  const price       = document.getElementById("prod-price")?.value.trim();
+  const price       = priceInput?.value.trim();
   const sizes       = sizesInput?.value.trim();
   const description = document.getElementById("prod-desc")?.value.trim();
 
-  if (name && category && price && (!hasSizes || sizes) && description) {
+  let versionsValid = true;
+  if (hasVersions) {
+    const fanPrice = parseInt(document.getElementById("prod-fan-price")?.value.trim() || "0", 10);
+    const fanSizes = document.getElementById("prod-fan-sizes")?.value.trim();
+    const playerPrice = parseInt(document.getElementById("prod-player-price")?.value.trim() || "0", 10);
+    const playerSizes = document.getElementById("prod-player-sizes")?.value.trim();
+    versionsValid = fanPrice > 0 && fanSizes && playerPrice > 0 && playerSizes;
+  }
+
+  const isDetailsDone = hasVersions
+    ? (name && category && versionsValid && description)
+    : (name && category && price && (!hasSizes || sizes) && description);
+
+  if (isDetailsDone) {
     stepDetails.classList.add("done");
   } else {
     stepDetails.classList.remove("done");
@@ -823,25 +855,60 @@ async function handlePublish(e) {
 
   const name        = document.getElementById("prod-name").value.trim();
   const category    = document.getElementById("prod-category").value;
-  const priceRaw    = document.getElementById("prod-price").value.trim();
-  const hasSizes    = document.getElementById("prod-has-sizes")?.checked ?? true;
-  const sizesRaw    = document.getElementById("prod-sizes")?.value.trim() || "";
-  const description = document.getElementById("prod-desc").value.trim();
+  const isJersey    = category === "jerseys";
+  const hasVersions = isJersey && (document.getElementById("prod-has-versions")?.checked ?? false);
+  const rawDesc     = document.getElementById("prod-desc").value.trim();
   const badge       = document.getElementById("prod-badge").value.trim() || null;
   const featured    = document.getElementById("prod-featured").checked;
 
-  if (!name || !category || !priceRaw || (hasSizes && !sizesRaw) || !description) {
-    showMsg("Please fill in all required fields.", "error"); return;
-  }
-  if (!_uploadedFile) {
-    showMsg("Please select a product image.", "error"); return;
-  }
+  let price = 0;
+  let sizes = [];
+  let description = "";
 
-  const price = parseInt(priceRaw.replace(/[^0-9]/g, ""), 10);
-  if (isNaN(price) || price < 1) {
-    showMsg("Please enter a valid price.", "error"); return;
+  if (hasVersions) {
+    const fanPrice = parseInt(document.getElementById("prod-fan-price")?.value.trim() || "0", 10);
+    const fanSizes = (document.getElementById("prod-fan-sizes")?.value.trim() || "").split(",").map(s => s.trim()).filter(Boolean);
+    const playerPrice = parseInt(document.getElementById("prod-player-price")?.value.trim() || "0", 10);
+    const playerSizes = (document.getElementById("prod-player-sizes")?.value.trim() || "").split(",").map(s => s.trim()).filter(Boolean);
+
+    if (!name || !category || !rawDesc) {
+      showMsg("Please fill in all required fields.", "error"); return;
+    }
+    if (!fanPrice || fanPrice < 1 || fanSizes.length === 0) {
+      showMsg("Please enter a valid Fan Version price and at least one size.", "error"); return;
+    }
+    if (!playerPrice || playerPrice < 1 || playerSizes.length === 0) {
+      showMsg("Please enter a valid Player Version price and at least one size.", "error"); return;
+    }
+
+    const versions = {
+      fan: { label: "Fan Version", price: fanPrice, sizes: fanSizes },
+      player: { label: "Player Version", price: playerPrice, sizes: playerSizes }
+    };
+
+    price = fanPrice;
+    sizes = Array.from(new Set([...fanSizes, ...playerSizes]));
+    description = (typeof formatProductDescription === "function")
+      ? formatProductDescription(rawDesc, versions)
+      : rawDesc;
+  } else {
+    const priceRaw = document.getElementById("prod-price").value.trim();
+    const hasSizes = document.getElementById("prod-has-sizes")?.checked ?? true;
+    const sizesRaw = document.getElementById("prod-sizes")?.value.trim() || "";
+
+    if (!name || !category || !priceRaw || (hasSizes && !sizesRaw) || !rawDesc) {
+      showMsg("Please fill in all required fields.", "error"); return;
+    }
+
+    price = parseInt(priceRaw.replace(/[^0-9]/g, ""), 10);
+    if (isNaN(price) || price < 1) {
+      showMsg("Please enter a valid price.", "error"); return;
+    }
+    sizes = hasSizes ? sizesRaw.split(",").map(s => s.trim()).filter(Boolean) : [];
+    description = (typeof cleanProductDescription === "function")
+      ? cleanProductDescription(rawDesc)
+      : rawDesc;
   }
-  const sizes = hasSizes ? sizesRaw.split(",").map(s => s.trim()).filter(Boolean) : [];
 
   const btn = document.getElementById("publish-btn");
   btn.disabled    = true;
@@ -858,7 +925,7 @@ async function handlePublish(e) {
 
     btn.textContent = "Publishing…";
     showMsg("📝 Publishing product to database…", "info");
-    
+
     let published;
     try {
       published = await publishProduct(
@@ -914,8 +981,8 @@ async function loadAdminProductList() {
         <div class="admin-product-info">
           <strong>${p.name}</strong>
           <span class="admin-cat-tag">${getCategoryLabel(p.category)}</span>
-          <span class="admin-price">₦${p.price.toLocaleString()}</span>
-          <span class="admin-sizes">${(Array.isArray(p.sizes) && p.sizes.length > 0) ? `Sizes: ${p.sizes.join(", ")}` : '<span style="color:var(--text-muted);">No size required</span>'}</span>
+          <span class="admin-price">${p.versions ? `₦${p.versions.fan.price.toLocaleString()} / ₦${p.versions.player.price.toLocaleString()}` : `₦${p.price.toLocaleString()}`}</span>
+          <span class="admin-sizes">${p.versions ? `<span style="color:var(--accent-green);font-weight:600;">Fan: ₦${p.versions.fan.price.toLocaleString()} (${p.versions.fan.sizes.join(", ")}) · Player: ₦${p.versions.player.price.toLocaleString()} (${p.versions.player.sizes.join(", ")})</span>` : ((Array.isArray(p.sizes) && p.sizes.length > 0) ? `Sizes: ${p.sizes.join(", ")}` : '<span style="color:var(--text-muted);">No size required</span>')}</span>
           ${p.featured ? '<span class="admin-featured-tag">⭐ Featured</span>' : ""}
         </div>
         <div class="admin-row-actions">
@@ -943,7 +1010,7 @@ async function loadAdminProductList() {
 
 async function handleDeleteProduct(id, name, imageUrl) {
   if (!confirm(`Delete "${name}"? This will permanently remove the product and its image.`)) return;
-  
+
   try {
     // 1. If imageUrl is not passed, attempt to find it via getProductById
     let targetImageUrl = imageUrl;

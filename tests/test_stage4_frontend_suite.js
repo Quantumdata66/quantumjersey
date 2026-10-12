@@ -846,6 +846,107 @@ async function runStage4TestSuite() {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // 14. Stage 3: Versioned jersey Paystack checkout sends selected version and size
+  // ─────────────────────────────────────────────────────────────
+  try {
+    const { mockStorage } = setupMockEnvironment();
+    // Versioned jersey in cart
+    mockStorage.setItem('qj_cart_v1', JSON.stringify([
+      {
+        id: 'v5555555-5555-4555-8555-555555555555',
+        name: 'Arsenal 24/25 Home',
+        version: 'Fan Version',
+        size: 'XXL',
+        quantity: 1,
+        price: 30000
+      }
+    ]));
+
+    let capturedInitPayload = null;
+    global.fetch = async (url, opts) => {
+      if (url === '/api/paystack/initialize') {
+        capturedInitPayload = JSON.parse(opts.body);
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            authorization_url: 'https://checkout.paystack.com/mock-fan-version',
+            reference: 'QJ-PAY-FANVER',
+            order_ref: 'QJ-ORD-FANVER'
+          })
+        };
+      }
+      return { ok: false };
+    };
+
+    cartUI.handlePaymentMethodChange('paystack');
+    elementRegistry.get('co-name').value = 'Bukayo Saka';
+    elementRegistry.get('co-email').value = 'saka@example.com';
+    elementRegistry.get('co-phone').value = '+2348099887766';
+    elementRegistry.get('co-state').value = 'Lagos';
+    elementRegistry.get('co-city').value = 'Ikeja';
+    elementRegistry.get('co-address').value = 'Emirates Way';
+
+    await cartUI.handleCheckoutSubmit({ preventDefault: () => {} });
+
+    assert(capturedInitPayload !== null, 'Paystack init request was sent');
+    assert.strictEqual(capturedInitPayload.items[0].id, 'v5555555-5555-4555-8555-555555555555');
+    assert.strictEqual(capturedInitPayload.items[0].version, 'Fan Version', 'Version preserved in payload');
+    assert.strictEqual(capturedInitPayload.items[0].size, 'XXL', 'Version-specific size preserved in payload');
+    assert.strictEqual(capturedInitPayload.items[0].quantity, 1);
+
+    reportPass(14, 'Versioned jersey checkout sends version and version-specific size to Paystack');
+  } catch (err) {
+    reportFail(14, 'Versioned jersey checkout test failed', err);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 15. Stage 3: Cart identity preserves Fan Version and Player Version as separate line items
+  // ─────────────────────────────────────────────────────────────
+  try {
+    const cartLib = require('../js/cart.js');
+
+    // Line key generation tests
+    const keyFan = cartLib.generateLineKey('jersey-123', 'L', 'Default', 'Fan Version');
+    const keyPlayer = cartLib.generateLineKey('jersey-123', 'L', 'Default', 'Player Version');
+    const keyLegacy = cartLib.generateLineKey('jersey-123', 'L', 'Default', null);
+
+    assert(keyFan.includes('fan version'), 'Fan Version key contains version token');
+    assert(keyPlayer.includes('player version'), 'Player Version key contains version token');
+    assert.notStrictEqual(keyFan, keyPlayer, 'Fan Version and Player Version generate distinct line keys');
+    assert.strictEqual(keyLegacy, 'jersey-123___L___Default', 'Legacy item retains 3-part key without version token');
+
+    // Add both versions to in-memory mock storage
+    const { mockStorage } = setupMockEnvironment();
+    global.getProductById = (id) => ({
+      id: 'jersey-123',
+      name: 'Real Madrid 24/25 Home',
+      category: 'jerseys',
+      versions: {
+        fan: { price: 32000, sizes: ['S', 'M', 'L', 'XL'] },
+        player: { price: 48000, sizes: ['M', 'L', 'XL'] }
+      }
+    });
+
+    cartLib.addToCart('jersey-123', 'L', 1, { version: 'Fan Version' });
+    cartLib.addToCart('jersey-123', 'L', 1, { version: 'Player Version' });
+
+    const items = cartLib.getCartItems();
+    assert.strictEqual(items.length, 2, 'Fan and Player versions of same jersey and size remain separate items');
+    assert.strictEqual(items[0].version, 'Fan Version');
+    assert.strictEqual(items[0].price, 32000, 'Fan version uses fan price');
+    assert.strictEqual(items[1].version, 'Player Version');
+    assert.strictEqual(items[1].price, 48000, 'Player version uses player price');
+
+    const subtotal = cartLib.getCartSubtotal();
+    assert.strictEqual(subtotal, 80000, 'Cart subtotal correctly sums independent version prices');
+
+    reportPass(15, 'Cart identity keeps Fan and Player versions separate with independent pricing');
+  } catch (err) {
+    reportFail(15, 'Cart identity test failed', err);
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // Final Results
   // ─────────────────────────────────────────────────────────────
   console.log('\n================================================================');

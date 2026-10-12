@@ -90,6 +90,36 @@ let mockDb = {
       sizes: [],
       image_url: 'board.webp',
       in_stock: true
+    },
+    {
+      id: 'v5555555-5555-4555-8555-555555555555',
+      product_name: 'Arsenal 24/25 Home Jersey',
+      category: 'jerseys',
+      price: 32000,
+      sizes: ['S', 'M', 'L', 'XL'],
+      description: 'Official Arsenal Home Jersey.\n\n<!--QJ_VERSIONS:{"fan":{"label":"Fan Version","price":30000,"sizes":["S","M","L","XL","XXL"]},"player":{"label":"Player Version","price":45000,"sizes":["M","L","XL"]}}-->',
+      image_url: 'arsenal.webp',
+      in_stock: true
+    },
+    {
+      id: 'x6666666-6666-4666-8666-666666666666',
+      product_name: 'Corrupt Jersey',
+      category: 'jerseys',
+      price: 30000,
+      sizes: ['M', 'L'],
+      description: 'Some jersey with broken metadata.\n\n<!--QJ_VERSIONS:{"fan":{invalid_json}}-->',
+      image_url: 'corrupt.webp',
+      in_stock: true
+    },
+    {
+      id: 'd7777777-7777-4777-8777-777777777777',
+      product_name: 'Duplicate Marker Jersey',
+      category: 'jerseys',
+      price: 35000,
+      sizes: ['M', 'L'],
+      description: 'Ambiguous Jersey.\n\n<!--QJ_VERSIONS:{"fan":{"label":"Fan Version","price":30000,"sizes":["M"]}}-->\n\n<!--QJ_VERSIONS:{"fan":{"label":"Fan Version","price":10000,"sizes":["L"]}}-->',
+      image_url: 'duplicate.webp',
+      in_stock: true
     }
   ],
   orders: [],
@@ -1419,6 +1449,227 @@ async function runTestSuite() {
     sizedResBadSize.body?.error?.includes('Invalid size "99"') &&
     sizedResValid.statusCode === 200 &&
     sizedResValid.body?.success === true
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // 47. Stage 3: Version parsing, serialization, and description cleanup helpers
+  // ─────────────────────────────────────────────────────────────
+  const rawDescWithMeta = 'Official Arsenal Home Jersey 2024.\n\n<!--QJ_VERSIONS:{"fan":{"label":"Fan Version","price":30000,"sizes":["S","M","L","XL","XXL"]},"player":{"label":"Player Version","price":45000,"sizes":["M","L","XL"]}}-->';
+  const cleanMarketingCopy = 'Official Arsenal Home Jersey 2024.';
+
+  // Parse valid metadata
+  const parsedValid = validator.parseProductVersions(rawDescWithMeta);
+  const cleanedDesc = validator.cleanProductDescription(rawDescWithMeta);
+  const formattedDesc = validator.formatProductDescription(cleanMarketingCopy, parsedValid.versions);
+
+  // Parse malformed metadata (corrupt JSON)
+  const parsedCorrupt = validator.parseProductVersions('Some jersey.\n\n<!--QJ_VERSIONS:{bad_json}-->');
+  // Parse incomplete metadata (empty config)
+  const parsedEmpty = validator.parseProductVersions('Some jersey.\n\n<!--QJ_VERSIONS:{}-->');
+  // Parse ordinary description (no metadata)
+  const parsedOrdinary = validator.parseProductVersions('Plain football boots without any version comment.');
+  // Parse ambiguous duplicate metadata markers
+  const parsedDuplicate = validator.parseProductVersions('Jersey.\n\n<!--QJ_VERSIONS:{"fan":{"price":30000,"sizes":["M"]}}-->\n\n<!--QJ_VERSIONS:{"fan":{"price":10000,"sizes":["L"]}}-->');
+  // Parse malformed unclosed metadata marker
+  const parsedUnclosed = validator.parseProductVersions('Jersey.\n\n<!--QJ_VERSIONS:{"fan":{"price":30000,"sizes":["M"]}}');
+
+  // Normalization
+  const normFan = validator.normalizeVersionKey('Fan Version');
+  const normPlayer = validator.normalizeVersionKey('player');
+  const normBad = validator.normalizeVersionKey('Special Edition');
+
+  assert(47, 'parseProductVersions, cleanProductDescription, formatProductDescription, and normalizeVersionKey handle valid, corrupt, and duplicate markers correctly',
+    parsedValid.isVersioned === true &&
+    parsedValid.isCorrupt === false &&
+    parsedValid.versions.fan.price === 30000 &&
+    parsedValid.versions.player.price === 45000 &&
+    cleanedDesc === cleanMarketingCopy &&
+    formattedDesc.includes('<!--QJ_VERSIONS:') &&
+    validator.cleanProductDescription(formattedDesc) === cleanMarketingCopy &&
+    parsedCorrupt.isVersioned === false &&
+    parsedCorrupt.isCorrupt === true &&
+    parsedEmpty.isVersioned === false &&
+    parsedEmpty.isCorrupt === true &&
+    parsedOrdinary.isVersioned === false &&
+    parsedOrdinary.isCorrupt === false &&
+    parsedDuplicate.isVersioned === false &&
+    parsedDuplicate.isCorrupt === true &&
+    parsedDuplicate.error?.includes('duplicate') &&
+    parsedUnclosed.isVersioned === false &&
+    parsedUnclosed.isCorrupt === true &&
+    parsedUnclosed.error?.includes('unclosed') &&
+    normFan === 'fan' &&
+    normPlayer === 'player' &&
+    normBad === null
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // 48. Stage 3: Configured jersey checkout enforces authoritative Fan and Player prices & version sizes
+  // ─────────────────────────────────────────────────────────────
+  setupMockFetch();
+
+  // Fan Version (Authoritative price 30,000 NGN, permitted XXL)
+  const fanReq = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'v5555555-5555-4555-8555-555555555555', version: 'Fan Version', size: 'XXL', quantity: 1 }
+      ]
+    }
+  };
+  const fanRes = createMockRes();
+  await initHandler(fanReq, fanRes);
+
+  // Player Version (Authoritative price 45,000 NGN, quantity 2)
+  const playerReq = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'v5555555-5555-4555-8555-555555555555', version: 'Player Version', size: 'M', quantity: 2 }
+      ]
+    }
+  };
+  const playerRes = createMockRes();
+  await initHandler(playerReq, playerRes);
+
+  assert(48, 'Configured jersey checkout enforces authoritative Fan and Player prices and records selected version',
+    fanRes.statusCode === 200 &&
+    fanRes.body?.success === true &&
+    fanRes.body?.total_amount === 35000 && // 30,000 + 5,000 delivery
+    playerRes.statusCode === 200 &&
+    playerRes.body?.success === true &&
+    playerRes.body?.total_amount === 95000 // 2 * 45,000 + 5,000 delivery
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // 49. Stage 3: Configured jersey rejects missing versions, unsupported versions, and version-size mismatches
+  // ─────────────────────────────────────────────────────────────
+  setupMockFetch();
+
+  // Missing version on versioned jersey
+  const noVerReq = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'v5555555-5555-4555-8555-555555555555', size: 'M', quantity: 1 }
+      ]
+    }
+  };
+  const noVerRes = createMockRes();
+  await initHandler(noVerReq, noVerRes);
+
+  // Unsupported version on versioned jersey
+  const badVerReq = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'v5555555-5555-4555-8555-555555555555', version: 'Special Edition', size: 'M', quantity: 1 }
+      ]
+    }
+  };
+  const badVerRes = createMockRes();
+  await initHandler(badVerReq, badVerRes);
+
+  // Version-size mismatch: XXL is permitted for Fan Version but NOT for Player Version
+  const sizeMismatchReq = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'v5555555-5555-4555-8555-555555555555', version: 'Player Version', size: 'XXL', quantity: 1 }
+      ]
+    }
+  };
+  const sizeMismatchRes = createMockRes();
+  await initHandler(sizeMismatchReq, sizeMismatchRes);
+
+  assert(49, 'Configured jersey rejects missing versions, unsupported versions, and version-size mismatches',
+    noVerRes.statusCode === 400 &&
+    noVerRes.body?.error?.includes('Version selection is required') &&
+    badVerRes.statusCode === 400 &&
+    badVerRes.body?.error?.includes('Version selection is required') &&
+    sizeMismatchRes.statusCode === 400 &&
+    sizeMismatchRes.body?.error?.includes('Invalid size "XXL" for Player Version')
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // 50. Stage 3: Product with corrupt or duplicate version metadata fails closed with HTTP 500 without gateway call
+  // ─────────────────────────────────────────────────────────────
+  setupMockFetch();
+
+  const corruptReq = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'x6666666-6666-4666-8666-666666666666', version: 'Fan Version', size: 'M', quantity: 1 }
+      ]
+    }
+  };
+  const corruptRes = createMockRes();
+  await initHandler(corruptReq, corruptRes);
+
+  const duplicateReq = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'd7777777-7777-4777-8777-777777777777', version: 'Fan Version', size: 'M', quantity: 1 }
+      ]
+    }
+  };
+  const duplicateRes = createMockRes();
+  await initHandler(duplicateReq, duplicateRes);
+
+  assert(50, 'Product with corrupt or duplicate version metadata fails closed with HTTP 500 without initializing payment',
+    corruptRes.statusCode === 500 &&
+    corruptRes.body?.error?.includes('corrupt version metadata') &&
+    duplicateRes.statusCode === 500 &&
+    duplicateRes.body?.error?.includes('corrupt version metadata')
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // 51. Stage 3: Ordinary products reject version parameter; Fan and Player of same jersey remain separate cart lines
+  // ─────────────────────────────────────────────────────────────
+  setupMockFetch();
+
+  // Ordinary product (boots) supplied with version -> must be rejected
+  const ordinaryWithVerReq = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'b1111111-1111-4111-8111-111111111111', version: 'Fan Version', size: '42', quantity: 1 }
+      ]
+    }
+  };
+  const ordinaryWithVerRes = createMockRes();
+  await initHandler(ordinaryWithVerReq, ordinaryWithVerRes);
+
+  // Multi-line checkout: Fan Version (size M) and Player Version (size M) of SAME jersey
+  const multiEditionReq = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'v5555555-5555-4555-8555-555555555555', version: 'Fan Version', size: 'M', quantity: 1 },
+        { id: 'v5555555-5555-4555-8555-555555555555', version: 'Player Version', size: 'M', quantity: 1 }
+      ]
+    }
+  };
+  const multiEditionRes = createMockRes();
+  await initHandler(multiEditionReq, multiEditionRes);
+
+  assert(51, 'Ordinary products reject unexpected version; Fan and Player versions of same jersey and size remain separate cart lines',
+    ordinaryWithVerRes.statusCode === 400 &&
+    ordinaryWithVerRes.body?.error?.includes('does not support version selection') &&
+    multiEditionRes.statusCode === 200 &&
+    multiEditionRes.body?.success === true &&
+    multiEditionRes.body?.total_amount === 80000 // 30,000 (Fan) + 45,000 (Player) + 5,000 delivery
   );
 
   // Restore global fetch

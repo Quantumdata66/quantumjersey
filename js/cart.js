@@ -35,19 +35,23 @@ function saveCartItems(items) {
 }
 
 /**
- * Generate a unique line key distinguishing product ID, selected size, and color.
+ * Generate a unique line key distinguishing product ID, selected size, color, and version.
  */
-function generateLineKey(productId, size = null, color = "Default") {
+function generateLineKey(productId, size = null, color = "Default", version = null) {
   const cleanId = String(productId).trim();
   const cleanSize = size ? String(size).trim() : "none";
   const cleanColor = String(color || "Default").trim();
+  const cleanVer = version ? String(version).trim().toLowerCase() : null;
+  if (cleanVer) {
+    return `${cleanId}___${cleanVer}___${cleanSize}___${cleanColor}`;
+  }
   return `${cleanId}___${cleanSize}___${cleanColor}`;
 }
 
 /**
  * Add a product to the cart.
- * If the exact same product ID + size exists, increments quantity.
- * Recalculates unit price from trusted registry.
+ * If the exact same product ID + version + size exists, increments quantity.
+ * Recalculates unit price from trusted registry or version configuration.
  */
 function addToCart(productOrId, size = null, quantity = 1, metadata = {}) {
   let product = null;
@@ -68,29 +72,55 @@ function addToCart(productOrId, size = null, quantity = 1, metadata = {}) {
     return { success: false, message: "Invalid product." };
   }
 
+  // Determine version
+  const selectedVersion = metadata.version ? String(metadata.version).trim() : null;
+
   // Determine size
   let selectedSize = null;
-  const hasSizes = product && Array.isArray(product.sizes) && product.sizes.length > 0;
-  if (hasSizes) {
-    selectedSize = size || product.sizes[0];
+  if (selectedVersion && product && product.versions) {
+    const vKey = (typeof normalizeVersionKey === "function")
+      ? normalizeVersionKey(selectedVersion)
+      : (selectedVersion.toLowerCase().includes("player") ? "player" : "fan");
+    const vConfig = vKey ? product.versions[vKey] : null;
+    const vSizes = vConfig && Array.isArray(vConfig.sizes) ? vConfig.sizes : [];
+    if (vSizes.length > 0) {
+      selectedSize = (size && vSizes.includes(size)) ? size : vSizes[0];
+    } else {
+      selectedSize = null;
+    }
   } else {
-    // Non-sized product: do not invent a customer-selected size
-    selectedSize = null;
+    const hasSizes = product && Array.isArray(product.sizes) && product.sizes.length > 0;
+    if (hasSizes) {
+      selectedSize = size || product.sizes[0];
+    } else {
+      // Non-sized product: do not invent a customer-selected size
+      selectedSize = null;
+    }
   }
 
   const cleanQty = Math.max(1, parseInt(quantity, 10) || 1);
-  const lineKey = generateLineKey(productId, selectedSize, metadata.color || "Default");
+  const lineKey = generateLineKey(productId, selectedSize, metadata.color || "Default", selectedVersion);
   const items = getCartItems();
   const existingIndex = items.findIndex(item => item.lineKey === lineKey);
 
   // Trusted price extraction
   let trustedPrice = 0;
-  if (product && typeof product.price === "number") {
-    trustedPrice = product.price;
-  } else if (metadata.price && typeof metadata.price === "number") {
-    trustedPrice = metadata.price;
-  } else if (existingIndex > -1) {
-    trustedPrice = items[existingIndex].price;
+  if (selectedVersion && product && product.versions) {
+    const vKey = (typeof normalizeVersionKey === "function")
+      ? normalizeVersionKey(selectedVersion)
+      : (selectedVersion.toLowerCase().includes("player") ? "player" : "fan");
+    if (vKey && product.versions[vKey] && typeof product.versions[vKey].price === "number") {
+      trustedPrice = product.versions[vKey].price;
+    }
+  }
+  if (!trustedPrice) {
+    if (product && typeof product.price === "number") {
+      trustedPrice = product.price;
+    } else if (metadata.price && typeof metadata.price === "number") {
+      trustedPrice = metadata.price;
+    } else if (existingIndex > -1) {
+      trustedPrice = items[existingIndex].price;
+    }
   }
 
   const productName = product?.name || metadata.name || "Football Gear";
@@ -103,12 +133,16 @@ function addToCart(productOrId, size = null, quantity = 1, metadata = {}) {
     items[existingIndex].price = trustedPrice; // Refresh trusted price
     items[existingIndex].name = productName;
     items[existingIndex].image = productImage;
+    if (selectedVersion && !items[existingIndex].version) {
+      items[existingIndex].version = selectedVersion;
+    }
   } else {
     items.push({
       lineKey,
       id: productId,
       name: productName,
       category: productCategory,
+      version: selectedVersion,
       size: selectedSize,
       color: metadata.color || "Default",
       price: trustedPrice,
@@ -175,8 +209,15 @@ function getCartSubtotal() {
     let trustedPrice = item.price;
     if (typeof getProductById === "function") {
       const live = getProductById(item.id);
-      if (live && typeof live.price === "number") {
-        trustedPrice = live.price;
+      if (live) {
+        if (item.version && live.versions) {
+          const vKey = typeof normalizeVersionKey === "function" ? normalizeVersionKey(item.version) : null;
+          if (vKey && live.versions[vKey] && typeof live.versions[vKey].price === "number") {
+            trustedPrice = live.versions[vKey].price;
+          }
+        } else if (typeof live.price === "number") {
+          trustedPrice = live.price;
+        }
       }
     }
     const qty = parseInt(item.quantity, 10) || 0;
@@ -212,8 +253,15 @@ function syncCartWithRegistry() {
   items.forEach(item => {
     const live = getProductById(item.id);
     if (live) {
-      if (live.price && live.price !== item.price) {
-        item.price = live.price;
+      let targetPrice = live.price;
+      if (item.version && live.versions) {
+        const vKey = typeof normalizeVersionKey === "function" ? normalizeVersionKey(item.version) : null;
+        if (vKey && live.versions[vKey] && typeof live.versions[vKey].price === "number") {
+          targetPrice = live.versions[vKey].price;
+        }
+      }
+      if (targetPrice && targetPrice !== item.price) {
+        item.price = targetPrice;
         modified = true;
       }
       if (live.name && live.name !== item.name) {
@@ -252,4 +300,24 @@ if (typeof window !== "undefined") {
     syncCartWithRegistry();
     dispatchCartUpdated();
   });
+}
+
+// ─── Node.js CommonJS Exports (for automated testing) ───────
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    getCartItems,
+    saveCartItems,
+    generateLineKey,
+    addToCart,
+    updateCartQuantity,
+    removeCartItem,
+    clearCart,
+    getCartTotalCount,
+    getCartSubtotal,
+    calculateDelivery,
+    syncCartWithRegistry,
+    dispatchCartUpdated,
+    CART_STORAGE_KEY,
+    STANDARD_DELIVERY_FEE
+  };
 }

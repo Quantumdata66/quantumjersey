@@ -261,7 +261,7 @@ function injectCartUIElements() {
 
 function syncHeaderCartButtons() {
   const count = typeof getCartTotalCount === "function" ? getCartTotalCount() : 0;
-  
+
   // Update desktop nav
   const navInner = document.querySelector(".nav-inner .nav-links");
   if (navInner && !document.getElementById("nav-cart-btn")) {
@@ -365,6 +365,7 @@ function renderCartDrawer() {
             </button>
           </div>
           <div class="cart-item-meta">
+            ${item.version ? `<span class="cart-meta-version" style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;font-size:0.75rem;font-weight:600;color:var(--accent-gold, #f59e0b);margin-right:6px;">${item.version}</span>` : ""}
             ${item.size ? `<span class="cart-meta-size">Size: <strong>${item.size}</strong></span>` : ""}
             ${item.color && item.color !== "Default" ? `<span class="cart-meta-color">• Color: ${item.color}</span>` : ""}
           </div>
@@ -716,6 +717,7 @@ async function handleCheckoutSubmit(event) {
         id: item.id,
         name: item.name,
         category: item.category || "gear",
+        version: item.version || null,
         size: item.size || null,
         color: item.color || "Default",
         quantity: item.quantity,
@@ -781,11 +783,17 @@ async function handleCheckoutSubmit(event) {
       delivery_address: address,
       delivery_notes: notes || null
     },
-    items: items.map(item => ({
-      id: item.id,
-      size: item.size || null,
-      quantity: parseInt(item.quantity, 10) || 1
-    })),
+    items: items.map(item => {
+      const entry = {
+        id: item.id,
+        size: item.size || null,
+        quantity: parseInt(item.quantity, 10) || 1
+      };
+      if (item.version) {
+        entry.version = item.version;
+      }
+      return entry;
+    }),
     callback_url: window.location.origin + cleanReturnPath
   };
 
@@ -854,8 +862,9 @@ function saveCheckoutSnapshot(reference, orderRef, items) {
       orderRef,
       initiatedAt: Date.now(),
       items: (items || []).map(item => ({
-        lineKey: item.lineKey || `${item.id}___${item.size ? item.size : "none"}___${item.color || "Default"}`,
+        lineKey: item.lineKey || `${item.id}___${item.version ? String(item.version).trim().toLowerCase() + "___" : ""}${item.size ? item.size : "none"}___${item.color || "Default"}`,
         id: item.id,
+        version: item.version || null,
         size: item.size || null,
         color: item.color || "Default",
         quantity: parseInt(item.quantity, 10) || 1
