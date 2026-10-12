@@ -3404,6 +3404,215 @@ footer {
   }
 }
 
+/* ============================================================
+   Stage 4: Checkout Payment Options & Status Modal Styles
+   ============================================================ */
 
+.payment-method-selector-wrap {
+  margin-top: 18px;
+  margin-bottom: 16px;
+}
 
+.checkout-section-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
 
+.payment-methods-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .payment-methods-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.payment-option-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-surface-2);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition);
+  user-select: none;
+}
+
+.payment-option-card:hover {
+  border-color: rgba(0, 255, 135, 0.4);
+  background: var(--bg-surface-3);
+}
+
+.payment-option-card.active {
+  border-color: var(--accent-green);
+  background: rgba(0, 255, 135, 0.06);
+  box-shadow: 0 0 20px rgba(0, 255, 135, 0.1);
+}
+
+.payment-option-card:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+}
+
+.payment-option-card input[type="radio"] {
+  margin-top: 3px;
+  accent-color: var(--accent-green);
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.option-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.option-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.option-icon {
+  font-size: 1rem;
+}
+
+.option-pill {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent-green);
+  color: #000;
+  margin-left: auto;
+}
+
+.option-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  margin: 0;
+}
+
+.checkout-field-full {
+  grid-column: 1 / -1;
+}
+
+.field-hint {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  margin-top: 5px;
+}
+
+.field-error-msg {
+  display: block;
+  font-size: 0.75rem;
+  color: #f87171;
+  margin-top: 4px;
+  min-height: 16px;
+}
+
+/* Payment Status Modal */
+.status-modal-card {
+  text-align: center;
+  max-width: 480px;
+}
+
+.status-icon-wrap {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  margin: 0 auto 18px;
+}
+
+.status-icon-loading {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+}
+
+.status-icon-success {
+  background: rgba(0, 255, 135, 0.15);
+  border: 1px solid var(--border-accent);
+}
+
+.status-icon-failed {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.status-icon-warning {
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+/* Spinner */
+.qj-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--accent-green);
+  border-radius: 50%;
+  animation: qjSpin 0.8s linear infinite;
+}
+
+@keyframes qjSpin {
+  to { transform: rotate(360deg); }
+}
+
+.status-details-box {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin: 18px 0;
+  text-align: left;
+  font-size: 0.84rem;
+}
+
+.status-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.status-detail-row:last-child {
+  border-bottom: none;
+}
+
+.status-detail-label {
+  color: var(--text-secondary);
+}
+
+.status-detail-value {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.status-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
