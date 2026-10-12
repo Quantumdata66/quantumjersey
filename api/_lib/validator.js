@@ -104,7 +104,7 @@ function validateItems(items) {
 
     let cleanSize = 'Standard';
     if (size && typeof size === 'string') {
-      cleanSize = size.trim().slice(0, 20);
+      cleanSize = size.trim().slice(0, 50);
     }
 
     cleanItems.push({

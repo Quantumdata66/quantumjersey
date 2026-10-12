@@ -72,6 +72,15 @@ let mockDb = {
       sizes: ['42'],
       image_url: 'oos.webp',
       in_stock: false
+    },
+    {
+      id: 'f2263e91-df36-4b51-bcc7-e01f9257662e',
+      product_name: 'Refree Whistle',
+      category: 'sportswear',
+      price: 8000,
+      sizes: ['Professional Refree Whistle'],
+      image_url: 'whistle.webp',
+      in_stock: true
     }
   ],
   orders: [],
@@ -1212,6 +1221,92 @@ async function runTestSuite() {
   assert(42, 'Webhook with stream emitting error rejected cleanly with HTTP 400 RAW_BODY_ERROR',
     errorWebhookRes.statusCode === 400 &&
     errorWebhookRes.body?.code === 'RAW_BODY_ERROR'
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // 43. Stage 1 Regression: validateItems preserves sizes up to 50 chars with trimming and clamps oversized strings
+  // ─────────────────────────────────────────────────────────────
+  const untruncatedResult = validator.validateItems([
+    { id: 'f2263e91-df36-4b51-bcc7-e01f9257662e', size: '  Professional Refree Whistle  ', quantity: 1 }
+  ]);
+  const clampedResult = validator.validateItems([
+    { id: 'f2263e91-df36-4b51-bcc7-e01f9257662e', size: 'X'.repeat(60), quantity: 1 }
+  ]);
+  const defaultSizeResult = validator.validateItems([
+    { id: 'f2263e91-df36-4b51-bcc7-e01f9257662e', size: null, quantity: 1 }
+  ]);
+
+  assert(43, 'validateItems preserves 27-char size without 20-char truncation and clamps at 50 chars',
+    untruncatedResult.valid === true &&
+    untruncatedResult.data[0].size === 'Professional Refree Whistle' &&
+    untruncatedResult.data[0].size.length === 27 &&
+    clampedResult.valid === true &&
+    clampedResult.data[0].size === 'X'.repeat(50) &&
+    clampedResult.data[0].size.length === 50 &&
+    defaultSizeResult.valid === true &&
+    defaultSizeResult.data[0].size === 'Standard'
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // 44. Stage 1 Regression: Refree Whistle checkout succeeds with Professional Refree Whistle and rejects invalid sizes
+  // ─────────────────────────────────────────────────────────────
+  setupMockFetch();
+  const whistleReqValid = {
+    method: 'POST',
+    body: {
+      customer: {
+        name: 'Emeka Okafor',
+        email: 'emeka@example.com',
+        phone: '+2348011223344',
+        delivery_state: 'Lagos',
+        delivery_city: 'Surulere',
+        delivery_address: '10 Stadium Road'
+      },
+      items: [
+        { id: 'f2263e91-df36-4b51-bcc7-e01f9257662e', size: 'Professional Refree Whistle', quantity: 1 }
+      ]
+    }
+  };
+  const whistleResValid = createMockRes();
+  await initHandler(whistleReqValid, whistleResValid);
+
+  // Previously truncated 20-char size "Professional Refree " should be rejected as invalid size
+  const whistleReqTruncated = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'f2263e91-df36-4b51-bcc7-e01f9257662e', size: 'Professional Refree ', quantity: 1 }
+      ]
+    }
+  };
+  const whistleResTruncated = createMockRes();
+  await initHandler(whistleReqTruncated, whistleResTruncated);
+
+  // Default "Standard" size should also be rejected as whistle only permits "Professional Refree Whistle"
+  const whistleReqStandard = {
+    method: 'POST',
+    body: {
+      customer: whistleReqValid.body.customer,
+      items: [
+        { id: 'f2263e91-df36-4b51-bcc7-e01f9257662e', size: 'Standard', quantity: 1 }
+      ]
+    }
+  };
+  const whistleResStandard = createMockRes();
+  await initHandler(whistleReqStandard, whistleResStandard);
+
+  assert(44, 'Refree Whistle initializes successfully with Professional Refree Whistle; rejects invalid/truncated sizes',
+    whistleResValid.statusCode === 200 &&
+    whistleResValid.body?.success === true &&
+    whistleResValid.body?.authorization_url?.startsWith('https://checkout.paystack.com/') &&
+    whistleResValid.body?.total_amount === 13000 &&
+    whistleResTruncated.statusCode === 400 &&
+    whistleResTruncated.body?.error?.includes('Invalid size') &&
+    whistleResTruncated.body?.error?.includes('Permitted sizes: Professional Refree Whistle') &&
+    whistleResStandard.statusCode === 400 &&
+    whistleResStandard.body?.error?.includes('Invalid size') &&
+    whistleResStandard.body?.error?.includes('Permitted sizes: Professional Refree Whistle')
   );
 
   // Restore global fetch
