@@ -143,113 +143,193 @@ const APPROVED_PRODUCTION_ORIGINS = [
 const PREVIEW_HOSTNAME_PATTERN = /^quantumjersey(-[a-z0-9-]+)?\.vercel\.app$/;
 
 /**
+ * Strictly parses and validates a Vercel deployment URL from environment variables.
+ * Rejects non-HTTPS schemes, ports, paths, query strings, hashes, credentials,
+ * and hostnames not matching the Quantum Jersey preview naming pattern.
+ *
+ * @param {string} raw - Value from process.env
+ * @param {string} envVarName - Name of the environment variable for descriptive errors
+ * @returns {{ valid: boolean, host?: string, error?: string }}
+ */
+function parseStrictVercelHost(raw, envVarName) {
+  if (!raw || typeof raw !== 'string') {
+    return { valid: false, error: `${envVarName} is missing or not a string.` };
+  }
+
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return { valid: false, error: `${envVarName} is empty.` };
+  }
+
+  // Reject embedded whitespace
+  if (/\s/.test(trimmed)) {
+    return { valid: false, error: `${envVarName} contains whitespace.` };
+  }
+
+  // Reject http:// protocol explicitly
+  if (/^http:\/\//i.test(trimmed)) {
+    return { valid: false, error: `${envVarName} must use HTTPS, not HTTP.` };
+  }
+
+  // Reject other non-https protocols
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//i.test(trimmed) && !/^https:\/\//i.test(trimmed)) {
+    return { valid: false, error: `${envVarName} uses an invalid or unsupported protocol.` };
+  }
+
+  const withProto = /^https:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  let parsed;
+  try {
+    parsed = new URL(withProto);
+  } catch (_) {
+    return { valid: false, error: `${envVarName} is malformed and cannot be parsed as a URL.` };
+  }
+
+  // Protocol must be https
+  if (parsed.protocol !== 'https:') {
+    return { valid: false, error: `${envVarName} must use HTTPS.` };
+  }
+
+  // Must not contain credentials
+  if (parsed.username || parsed.password) {
+    return { valid: false, error: `${envVarName} contains user credentials.` };
+  }
+
+  // Must not contain custom ports
+  if (parsed.port && parsed.port !== '443') {
+    return { valid: false, error: `${envVarName} contains an unauthorized custom port "${parsed.port}".` };
+  }
+
+  // Path must be empty or root '/'
+  if (parsed.pathname && parsed.pathname !== '/' && parsed.pathname !== '') {
+    return { valid: false, error: `${envVarName} contains unexpected path segments "${parsed.pathname}".` };
+  }
+
+  // Search/query string must be empty
+  if (parsed.search) {
+    return { valid: false, error: `${envVarName} contains unexpected query parameters.` };
+  }
+
+  // Hash fragment must be empty
+  if (parsed.hash) {
+    return { valid: false, error: `${envVarName} contains unexpected hash fragments.` };
+  }
+
+  const host = parsed.hostname.toLowerCase();
+
+  // Validate hostname pattern
+  if (!PREVIEW_HOSTNAME_PATTERN.test(host)) {
+    return {
+      valid: false,
+      error: `${envVarName} is malformed or untrusted: hostname "${host}" does not match the approved Quantum Jersey preview naming pattern.`
+    };
+  }
+
+  return { valid: true, host };
+}
+
+/**
  * Validates and extracts a trusted deployment hostname from process.env.VERCEL_URL.
  * Returns the clean hostname string if valid, null if unset/empty, or false if malformed/untrusted.
  */
 function getTrustedPreviewHostname() {
   const raw = process.env.VERCEL_URL;
-  if (!raw || typeof raw !== 'string') return null;
-  const trimmed = raw.trim().toLowerCase();
-  if (!trimmed) return null;
-  const noProto = trimmed.replace(/^https?:\/\//, '');
-  const host = noProto.split('/')[0].split(':')[0];
-  if (!PREVIEW_HOSTNAME_PATTERN.test(host)) {
-    return false;
-  }
-  return host;
+  if (!raw || typeof raw !== 'string' || !raw.trim()) return null;
+  const parsed = parseStrictVercelHost(raw, 'VERCEL_URL');
+  return parsed.valid ? parsed.host : false;
 }
 
 /**
  * Resolves and strictly validates the trusted deployment configuration for Preview environments.
  *
  * In Preview (VERCEL_ENV === 'preview'):
- * - Requires a valid trusted VERCEL_URL, OR an explicitly configured APP_BASE_URL whose
- *   HTTPS origin and hostname satisfy Quantum Jersey preview restrictions.
- * - Rejects malformed values in either setting.
- * - Rejects conflicts between VERCEL_URL and APP_BASE_URL.
- * - Fails closed if neither setting is validly provided.
+ * - Requires execution on the Vercel platform (process.env.VERCEL === '1').
+ * - Requires a valid, platform-injected VERCEL_URL as the baseline deployment anchor.
+ * - Optionally validates VERCEL_BRANCH_URL as an additional platform deployment anchor.
+ * - If APP_BASE_URL is provided, it is NOT trusted as an independent authorization source;
+ *   its candidate hostname MUST match one of the verified platform anchors (VERCEL_URL or VERCEL_BRANCH_URL).
+ * - Rejects malformed values, unauthorized ports, paths, query strings, or conflicting hosts.
+ * - Fails closed if platform anchors are missing or invalid.
  *
- * @returns {{ valid: boolean, trustedHost?: string, error?: string }}
+ * @returns {{ valid: boolean, primaryHost?: string, trustedHost?: string, trustedHosts?: string[], error?: string }}
  */
 function resolvePreviewDeploymentConfig() {
+  // 1. Verify Vercel platform environment indicator (cannot enable preview in arbitrary environment)
+  if (process.env.VERCEL !== '1') {
+    return {
+      valid: false,
+      error: 'Preview environment requires execution on Vercel platform (VERCEL=1).'
+    };
+  }
+
+  // 2. Mandatory platform deployment URL anchor (VERCEL_URL)
   const rawVercelUrl = process.env.VERCEL_URL;
+  if (!rawVercelUrl || typeof rawVercelUrl !== 'string' || !rawVercelUrl.trim()) {
+    return {
+      valid: false,
+      error: 'Preview environment requires a valid trusted VERCEL_URL platform anchor.'
+    };
+  }
+
+  const parsedVercel = parseStrictVercelHost(rawVercelUrl, 'VERCEL_URL');
+  if (!parsedVercel.valid) {
+    return {
+      valid: false,
+      error: parsedVercel.error
+    };
+  }
+  const vercelHost = parsedVercel.host;
+
+  // 3. Optional platform branch alias anchor (VERCEL_BRANCH_URL)
+  const rawBranchUrl = process.env.VERCEL_BRANCH_URL;
+  let branchHost = null;
+  if (rawBranchUrl && typeof rawBranchUrl === 'string' && rawBranchUrl.trim()) {
+    const parsedBranch = parseStrictVercelHost(rawBranchUrl, 'VERCEL_BRANCH_URL');
+    if (!parsedBranch.valid) {
+      return {
+        valid: false,
+        error: parsedBranch.error
+      };
+    }
+    branchHost = parsedBranch.host;
+  }
+
+  // Platform deployment anchors directly provided by Vercel infrastructure
+  const platformAnchors = [vercelHost, branchHost].filter(Boolean);
+
+  // 4. Optional user-configured APP_BASE_URL (must tie to verified platform anchors)
   const rawAppBaseUrl = process.env.APP_BASE_URL;
-
-  let vercelHost = null;
   let appBaseHost = null;
-
-  // 1. Inspect VERCEL_URL if provided
-  if (rawVercelUrl && typeof rawVercelUrl === 'string' && rawVercelUrl.trim()) {
-    const trimmed = rawVercelUrl.trim().toLowerCase();
-    const noProto = trimmed.replace(/^https?:\/\//, '');
-    const candidateHost = noProto.split('/')[0].split(':')[0];
-
-    if (!PREVIEW_HOSTNAME_PATTERN.test(candidateHost)) {
-      return {
-        valid: false,
-        error: 'Deployment environment value VERCEL_URL is malformed or untrusted.'
-      };
-    }
-    vercelHost = candidateHost;
-  }
-
-  // 2. Inspect APP_BASE_URL if provided
   if (rawAppBaseUrl && typeof rawAppBaseUrl === 'string' && rawAppBaseUrl.trim()) {
-    let parsedAppBase;
-    try {
-      parsedAppBase = new URL(rawAppBaseUrl.trim());
-    } catch (_) {
+    const parsedAppBase = parseStrictVercelHost(rawAppBaseUrl, 'APP_BASE_URL');
+    if (!parsedAppBase.valid) {
       return {
         valid: false,
-        error: 'Configured APP_BASE_URL is not a valid URL.'
+        error: parsedAppBase.error
       };
     }
+    appBaseHost = parsedAppBase.host;
 
-    if (parsedAppBase.protocol !== 'https:') {
+    // Do NOT trust APP_BASE_URL independently; must match a verified platform anchor
+    if (!platformAnchors.includes(appBaseHost)) {
       return {
         valid: false,
-        error: 'Configured APP_BASE_URL in preview must use HTTPS protocol.'
+        error: `Untrusted APP_BASE_URL: hostname "${appBaseHost}" does not match current Vercel deployment platform anchor (${platformAnchors.join(', ')}).`
       };
     }
-
-    if (parsedAppBase.port && parsedAppBase.port !== '443') {
-      return {
-        valid: false,
-        error: 'Configured APP_BASE_URL in preview cannot use custom ports.'
-      };
-    }
-
-    const candidateHost = parsedAppBase.hostname.toLowerCase();
-    if (!PREVIEW_HOSTNAME_PATTERN.test(candidateHost)) {
-      return {
-        valid: false,
-        error: `Configured APP_BASE_URL hostname "${candidateHost}" does not match approved preview naming pattern.`
-      };
-    }
-    appBaseHost = candidateHost;
   }
 
-  // 3. Require at least one valid setting in Preview
-  if (!vercelHost && !appBaseHost) {
-    return {
-      valid: false,
-      error: 'Preview environment requires a valid trusted VERCEL_URL or an explicitly configured APP_BASE_URL.'
-    };
-  }
+  // 5. Trusted preview hostnames are exclusively the platform-verified deployment anchors
+  const trustedHosts = platformAnchors;
 
-  // 4. Reject conflicts if both are provided
-  if (vercelHost && appBaseHost && vercelHost !== appBaseHost) {
-    return {
-      valid: false,
-      error: `Configuration conflict: APP_BASE_URL hostname "${appBaseHost}" does not match VERCEL_URL "${vercelHost}".`
-    };
-  }
+  // 6. Primary trusted host for callback URLs (prefers verified APP_BASE_URL, then VERCEL_BRANCH_URL, then VERCEL_URL)
+  const primaryHost = appBaseHost || branchHost || vercelHost;
 
-  // 5. Canonical trusted host for this preview deployment
-  const trustedHost = vercelHost || appBaseHost;
   return {
     valid: true,
-    trustedHost
+    primaryHost,
+    trustedHost: primaryHost,
+    trustedHosts
   };
 }
 
@@ -306,12 +386,20 @@ function validateAppOrigin(origin) {
 
   const fullOrigin = `https://${hostname}`;
 
-  // 3. Canonical production origin is always approved
+  // 3. In production mode, origin validation is strictly restricted to APPROVED_PRODUCTION_ORIGINS
+  if (vercelEnv === 'production') {
+    if (APPROVED_PRODUCTION_ORIGINS.includes(fullOrigin)) {
+      return { valid: true, origin: fullOrigin };
+    }
+    return { valid: false, error: `Origin "${fullOrigin}" is not an approved merchant origin in production.` };
+  }
+
+  // 4. Canonical production origin is always approved across environments
   if (APPROVED_PRODUCTION_ORIGINS.includes(fullOrigin)) {
     return { valid: true, origin: fullOrigin };
   }
 
-  // 4. Preview origin evaluation (strictly enabled ONLY when VERCEL_ENV === 'preview')
+  // 5. Preview origin evaluation (strictly enabled ONLY when VERCEL_ENV === 'preview')
   if (isPreview) {
     // Fail closed unless PAYSTACK_SECRET_KEY is configured with sk_test_ prefix
     const paystackKey = process.env.PAYSTACK_SECRET_KEY || '';
@@ -339,17 +427,18 @@ function validateAppOrigin(origin) {
       };
     }
 
-    if (hostname !== previewConfig.trustedHost) {
+    const trustedHosts = previewConfig.trustedHosts || [previewConfig.trustedHost];
+    if (!trustedHosts.includes(hostname)) {
       return {
         valid: false,
-        error: `Preview origin "${fullOrigin}" does not match trusted deployment hostname "${previewConfig.trustedHost}".`
+        error: `Preview origin "${fullOrigin}" does not match trusted deployment hostname(s) [${trustedHosts.join(', ')}].`
       };
     }
 
     return { valid: true, origin: fullOrigin };
   }
 
-  // 5. All other origins fail closed
+  // 6. All other origins fail closed
   return { valid: false, error: `Origin "${fullOrigin}" is not an approved merchant origin.` };
 }
 
@@ -443,8 +532,12 @@ function resolveTrustedCallbackUrl(clientProvidedUrlOrPath) {
         error: `Server configuration error: ${previewConfig.error}`
       };
     }
-    serverBaseUrl = `https://${previewConfig.trustedHost}`;
+    serverBaseUrl = `https://${previewConfig.primaryHost || previewConfig.trustedHost}`;
+  } else if (vercelEnv === 'production') {
+    // Production callback URL is strictly restricted to canonical production domain
+    serverBaseUrl = 'https://quantumjersey.vercel.app';
   } else {
+    // Default / unset fallback resolves to canonical production domain unless explicitly configured
     serverBaseUrl = process.env.APP_BASE_URL || 'https://quantumjersey.vercel.app';
   }
 
@@ -508,6 +601,7 @@ module.exports = {
   validateRequestOrigin,
   resolveTrustedCallbackUrl,
   resolvePreviewDeploymentConfig,
+  parseStrictVercelHost,
   APPROVED_PRODUCTION_ORIGINS,
   PREVIEW_HOSTNAME_PATTERN,
   getTrustedPreviewHostname,

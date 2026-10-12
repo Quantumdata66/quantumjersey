@@ -22,19 +22,24 @@ function assert(num, description, condition, details = '') {
 
 // Helper to cleanly run tests under temporary environment state
 function withEnv(tempEnv, fn) {
+  const mergedEnv = Object.assign({}, tempEnv);
+  // In Vercel, preview runtime always injects VERCEL=1; default to '1' when testing preview unless explicitly overridden
+  if (mergedEnv.VERCEL_ENV === 'preview' && !('VERCEL' in mergedEnv)) {
+    mergedEnv.VERCEL = '1';
+  }
   const originalEnv = {};
-  for (const key of Object.keys(tempEnv)) {
+  for (const key of Object.keys(mergedEnv)) {
     originalEnv[key] = process.env[key];
-    if (tempEnv[key] === undefined) {
+    if (mergedEnv[key] === undefined) {
       delete process.env[key];
     } else {
-      process.env[key] = tempEnv[key];
+      process.env[key] = mergedEnv[key];
     }
   }
   try {
     return fn();
   } finally {
-    for (const key of Object.keys(tempEnv)) {
+    for (const key of Object.keys(mergedEnv)) {
       if (originalEnv[key] === undefined) {
         delete process.env[key];
       } else {
@@ -127,7 +132,7 @@ withEnv({
 }, () => {
   const res = validator.validateAppOrigin('https://quantumjersey-pr-42.vercel.app');
   assert(8, 'When both VERCEL_URL and APP_BASE_URL are unset, arbitrary preview hostname fails closed',
-    res.valid === false && res.error?.includes('requires a valid trusted VERCEL_URL or an explicitly configured APP_BASE_URL'),
+    res.valid === false && res.error?.includes('requires a valid trusted VERCEL_URL'),
     JSON.stringify(res)
   );
 });
@@ -139,8 +144,47 @@ withEnv({
   APP_BASE_URL: 'https://quantumjersey-pr-42.vercel.app'
 }, () => {
   const res = validator.validateAppOrigin('https://quantumjersey-pr-42.vercel.app');
-  assert(8.1, 'When VERCEL_URL is unset but APP_BASE_URL is validly configured, preview origin is approved',
+  assert(8.1, 'When VERCEL_URL is unset, APP_BASE_URL cannot independently authorize preview origin',
+    res.valid === false && res.error?.includes('requires a valid trusted VERCEL_URL'),
+    JSON.stringify(res)
+  );
+});
+
+withEnv({
+  VERCEL_ENV: 'preview',
+  PAYSTACK_SECRET_KEY: 'sk_test_preview_secret_key_12345',
+  VERCEL_URL: 'quantumjersey-pr-42.vercel.app',
+  APP_BASE_URL: 'https://quantumjersey-pr-42.vercel.app'
+}, () => {
+  const res = validator.validateAppOrigin('https://quantumjersey-pr-42.vercel.app');
+  assert(8.2, 'When APP_BASE_URL matches VERCEL_URL platform anchor, preview origin is approved',
     res.valid === true && res.origin === 'https://quantumjersey-pr-42.vercel.app',
+    JSON.stringify(res)
+  );
+});
+
+withEnv({
+  VERCEL_ENV: 'preview',
+  PAYSTACK_SECRET_KEY: 'sk_test_preview_secret_key_12345',
+  VERCEL_URL: 'quantumjersey-pr-42.vercel.app',
+  APP_BASE_URL: 'https://quantumjersey-unrelated.vercel.app'
+}, () => {
+  const res = validator.validateAppOrigin('https://quantumjersey-unrelated.vercel.app');
+  assert(8.3, 'Untrusted APP_BASE_URL not matching VERCEL_URL platform anchor fails closed',
+    res.valid === false && res.error?.includes('Untrusted APP_BASE_URL'),
+    JSON.stringify(res)
+  );
+});
+
+withEnv({
+  VERCEL_ENV: 'preview',
+  PAYSTACK_SECRET_KEY: 'sk_test_preview_secret_key_12345',
+  VERCEL: undefined,
+  VERCEL_URL: 'quantumjersey-pr-42.vercel.app'
+}, () => {
+  const res = validator.validateAppOrigin('https://quantumjersey-pr-42.vercel.app');
+  assert(8.4, 'Arbitrary environment without VERCEL=1 platform indicator cannot enable preview mode',
+    res.valid === false && res.error?.includes('VERCEL=1'),
     JSON.stringify(res)
   );
 });
@@ -333,8 +377,8 @@ withEnv({
   VERCEL_URL: undefined
 }, () => {
   const cb = validator.resolveTrustedCallbackUrl('/cart');
-  assert(26, 'resolveTrustedCallbackUrl in preview fails closed when both APP_BASE_URL and VERCEL_URL are missing',
-    cb.valid === false && cb.error?.includes('requires a valid trusted VERCEL_URL or an explicitly configured APP_BASE_URL'),
+  assert(26, 'resolveTrustedCallbackUrl in preview fails closed when VERCEL_URL platform anchor is missing',
+    cb.valid === false && cb.error?.includes('requires a valid trusted VERCEL_URL platform anchor'),
     JSON.stringify(cb)
   );
 });

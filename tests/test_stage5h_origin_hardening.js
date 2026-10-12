@@ -26,19 +26,24 @@ function assert(num, description, condition, details = '') {
 
 // Clean async helper to manage scoped environment variables
 async function withEnv(tempEnv, fn) {
+  const mergedEnv = Object.assign({}, tempEnv);
+  // In Vercel, preview runtime always injects VERCEL=1; default to '1' when testing preview unless explicitly overridden
+  if (mergedEnv.VERCEL_ENV === 'preview' && !('VERCEL' in mergedEnv)) {
+    mergedEnv.VERCEL = '1';
+  }
   const originalEnv = {};
-  for (const key of Object.keys(tempEnv)) {
+  for (const key of Object.keys(mergedEnv)) {
     originalEnv[key] = process.env[key];
-    if (tempEnv[key] === undefined) {
+    if (mergedEnv[key] === undefined) {
       delete process.env[key];
     } else {
-      process.env[key] = tempEnv[key];
+      process.env[key] = mergedEnv[key];
     }
   }
   try {
     return await fn();
   } finally {
-    for (const key of Object.keys(tempEnv)) {
+    for (const key of Object.keys(mergedEnv)) {
       if (originalEnv[key] === undefined) {
         delete process.env[key];
       } else {
@@ -136,18 +141,19 @@ async function runTests() {
   await withEnv({
     VERCEL_ENV: 'preview',
     PAYSTACK_SECRET_KEY: 'sk_test_preview_key_123',
-    VERCEL_URL: undefined,
+    VERCEL_URL: 'quantumjersey-deploy-instance.vercel.app',
+    VERCEL_BRANCH_URL: 'quantumjersey-configured-branch.vercel.app',
     APP_BASE_URL: 'https://quantumjersey-configured-branch.vercel.app'
   }, async () => {
     const res = validator.validateAppOrigin('https://quantumjersey-configured-branch.vercel.app');
-    assert(2.3, 'validateAppOrigin accepts preview origin when APP_BASE_URL is explicitly configured',
+    assert(2.3, 'validateAppOrigin accepts preview origin when APP_BASE_URL matches deployment platform anchor',
       res.valid === true && res.origin === 'https://quantumjersey-configured-branch.vercel.app'
     );
 
     const reqCheck = validator.validateRequestOrigin({
       headers: { origin: 'https://quantumjersey-configured-branch.vercel.app' }
     });
-    assert(2.4, 'validateRequestOrigin accepts preview origin when APP_BASE_URL is configured',
+    assert(2.4, 'validateRequestOrigin accepts preview origin when APP_BASE_URL matches deployment anchor',
       reqCheck.valid === true && reqCheck.origin === 'https://quantumjersey-configured-branch.vercel.app'
     );
   });
@@ -314,11 +320,11 @@ async function runTests() {
   });
 
   // ─────────────────────────────────────────────────────────────
-  // Scenario 7: Missing, malformed, or conflicting Preview environment values fail closed
+  // Scenario 7: Deployment metadata, strict parsing, untrusted APP_BASE_URL, and production isolation
   // ─────────────────────────────────────────────────────────────
-  console.log('\nScenario 7: Missing, malformed, or conflicting Preview environment values fail closed');
+  console.log('\nScenario 7: Deployment metadata, strict parsing, untrusted APP_BASE_URL, and production isolation');
 
-  // 7a. Missing both VERCEL_URL and APP_BASE_URL
+  // 7.1. Missing VERCEL_URL platform anchor fails closed
   await withEnv({
     VERCEL_ENV: 'preview',
     PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
@@ -326,61 +332,247 @@ async function runTests() {
     APP_BASE_URL: undefined
   }, async () => {
     const res = validator.validateAppOrigin('https://quantumjersey-preview.vercel.app');
-    assert(7.1, 'When both VERCEL_URL and APP_BASE_URL are absent, preview origin fails closed',
-      res.valid === false && res.error?.includes('requires a valid trusted VERCEL_URL or an explicitly configured APP_BASE_URL'),
+    assert(7.1, 'When VERCEL_URL is absent, preview origin fails closed',
+      res.valid === false && res.error?.includes('requires a valid trusted VERCEL_URL platform anchor'),
       JSON.stringify(res)
     );
 
     const cb = validator.resolveTrustedCallbackUrl('/cart');
-    assert(7.2, 'resolveTrustedCallbackUrl fails closed when both VERCEL_URL and APP_BASE_URL are absent',
-      cb.valid === false && cb.error?.includes('requires a valid trusted VERCEL_URL or an explicitly configured APP_BASE_URL'),
+    assert(7.2, 'resolveTrustedCallbackUrl fails closed when VERCEL_URL is absent',
+      cb.valid === false && cb.error?.includes('requires a valid trusted VERCEL_URL platform anchor'),
       JSON.stringify(cb)
     );
   });
 
-  // 7b. Malformed VERCEL_URL
+  // 7.3. Environment isolation: Missing VERCEL=1 flag in arbitrary environment fails closed
+  await withEnv({
+    VERCEL_ENV: 'preview',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL: undefined, // Simulated arbitrary non-Vercel environment
+    VERCEL_URL: 'quantumjersey-preview.vercel.app'
+  }, async () => {
+    const res = validator.validateAppOrigin('https://quantumjersey-preview.vercel.app');
+    assert(7.3, 'Preview cannot be enabled merely by setting VERCEL_ENV=preview without VERCEL=1',
+      res.valid === false && res.error?.includes('requires execution on Vercel platform (VERCEL=1)'),
+      JSON.stringify(res)
+    );
+  });
+
+  // 7.4. APP_BASE_URL alone without VERCEL_URL cannot independently authorize preview origin
+  await withEnv({
+    VERCEL_ENV: 'preview',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL_URL: undefined,
+    APP_BASE_URL: 'https://quantumjersey-validformat.vercel.app'
+  }, async () => {
+    const res = validator.validateAppOrigin('https://quantumjersey-validformat.vercel.app');
+    assert(7.4, 'APP_BASE_URL alone without VERCEL_URL cannot independently authorize preview origin',
+      res.valid === false && res.error?.includes('requires a valid trusted VERCEL_URL platform anchor'),
+      JSON.stringify(res)
+    );
+  });
+
+  // 7.5. Untrusted APP_BASE_URL (hostname does not match platform anchors) fails closed
+  await withEnv({
+    VERCEL_ENV: 'preview',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL_URL: 'quantumjersey-deploy-inst1.vercel.app',
+    VERCEL_BRANCH_URL: 'quantumjersey-git-branch1.vercel.app',
+    APP_BASE_URL: 'https://quantumjersey-untrusted-foreign.vercel.app'
+  }, async () => {
+    const res = validator.validateAppOrigin('https://quantumjersey-untrusted-foreign.vercel.app');
+    assert(7.5, 'Untrusted APP_BASE_URL not tied to platform deployment anchors fails closed',
+      res.valid === false && res.error?.includes('Untrusted APP_BASE_URL'),
+      JSON.stringify(res)
+    );
+
+    const cb = validator.resolveTrustedCallbackUrl('/cart');
+    assert(7.51, 'resolveTrustedCallbackUrl fails closed when APP_BASE_URL is untrusted',
+      cb.valid === false && cb.error?.includes('Untrusted APP_BASE_URL'),
+      JSON.stringify(cb)
+    );
+  });
+
+  // 7.6. Malformed VERCEL_URL: untrusted domain
   await withEnv({
     VERCEL_ENV: 'preview',
     PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
     VERCEL_URL: 'untrusted-domain.com'
   }, async () => {
     const res = validator.validateAppOrigin('https://quantumjersey-preview.vercel.app');
-    assert(7.3, 'Malformed VERCEL_URL fails closed',
+    assert(7.6, 'Malformed VERCEL_URL (untrusted domain) fails closed',
       res.valid === false && res.error?.includes('VERCEL_URL is malformed or untrusted'),
       JSON.stringify(res)
     );
   });
 
-  // 7c. Malformed APP_BASE_URL
+  // 7.7. Malformed VERCEL_URL with custom port
   await withEnv({
     VERCEL_ENV: 'preview',
     PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
-    VERCEL_URL: undefined,
-    APP_BASE_URL: 'http://quantumjersey-preview.vercel.app' // HTTP protocol in preview
+    VERCEL_URL: 'quantumjersey-preview.vercel.app:8443'
   }, async () => {
     const res = validator.validateAppOrigin('https://quantumjersey-preview.vercel.app');
-    assert(7.4, 'Non-HTTPS APP_BASE_URL in preview fails closed',
-      res.valid === false && res.error?.includes('must use HTTPS protocol'),
+    assert(7.7, 'Malformed VERCEL_URL with custom port fails closed',
+      res.valid === false && res.error?.includes('unauthorized custom port'),
       JSON.stringify(res)
     );
   });
 
-  // 7d. Conflicting settings: VERCEL_URL !== APP_BASE_URL
+  // 7.8. Malformed VERCEL_URL with path segments
   await withEnv({
     VERCEL_ENV: 'preview',
     PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
-    VERCEL_URL: 'quantumjersey-branch-a.vercel.app',
-    APP_BASE_URL: 'https://quantumjersey-branch-b.vercel.app'
+    VERCEL_URL: 'quantumjersey-preview.vercel.app/malicious/path'
   }, async () => {
-    const res = validator.validateAppOrigin('https://quantumjersey-branch-a.vercel.app');
-    assert(7.5, 'Conflicting VERCEL_URL and APP_BASE_URL hostnames fail closed',
-      res.valid === false && res.error?.includes('Configuration conflict'),
+    const res = validator.validateAppOrigin('https://quantumjersey-preview.vercel.app');
+    assert(7.8, 'Malformed VERCEL_URL with unexpected path segments fails closed',
+      res.valid === false && res.error?.includes('unexpected path segments'),
       JSON.stringify(res)
     );
+  });
 
+  // 7.9. Malformed VERCEL_URL with query string
+  await withEnv({
+    VERCEL_ENV: 'preview',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL_URL: 'quantumjersey-preview.vercel.app?key=evil'
+  }, async () => {
+    const res = validator.validateAppOrigin('https://quantumjersey-preview.vercel.app');
+    assert(7.9, 'Malformed VERCEL_URL with unexpected query parameters fails closed',
+      res.valid === false && res.error?.includes('unexpected query parameters'),
+      JSON.stringify(res)
+    );
+  });
+
+  // 7.10. Malformed VERCEL_URL with user credentials
+  await withEnv({
+    VERCEL_ENV: 'preview',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL_URL: 'admin:password@quantumjersey-preview.vercel.app'
+  }, async () => {
+    const res = validator.validateAppOrigin('https://quantumjersey-preview.vercel.app');
+    assert(7.10, 'Malformed VERCEL_URL with user credentials fails closed',
+      res.valid === false && res.error?.includes('user credentials'),
+      JSON.stringify(res)
+    );
+  });
+
+  // 7.11. Malformed VERCEL_URL with HTTP protocol
+  await withEnv({
+    VERCEL_ENV: 'preview',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL_URL: 'http://quantumjersey-preview.vercel.app'
+  }, async () => {
+    const res = validator.validateAppOrigin('https://quantumjersey-preview.vercel.app');
+    assert(7.11, 'Malformed VERCEL_URL with HTTP protocol fails closed',
+      res.valid === false && res.error?.includes('must use HTTPS, not HTTP'),
+      JSON.stringify(res)
+    );
+  });
+
+  // 7.12. Malformed VERCEL_BRANCH_URL with custom port
+  await withEnv({
+    VERCEL_ENV: 'preview',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL_URL: 'quantumjersey-preview.vercel.app',
+    VERCEL_BRANCH_URL: 'quantumjersey-branch.vercel.app:9000'
+  }, async () => {
+    const res = validator.validateAppOrigin('https://quantumjersey-preview.vercel.app');
+    assert(7.12, 'Malformed VERCEL_BRANCH_URL with custom port fails closed',
+      res.valid === false && res.error?.includes('unauthorized custom port'),
+      JSON.stringify(res)
+    );
+  });
+
+  // 7.13. Malformed VERCEL_BRANCH_URL with path segments
+  await withEnv({
+    VERCEL_ENV: 'preview',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL_URL: 'quantumjersey-preview.vercel.app',
+    VERCEL_BRANCH_URL: 'quantumjersey-branch.vercel.app/extra/path'
+  }, async () => {
+    const res = validator.validateAppOrigin('https://quantumjersey-preview.vercel.app');
+    assert(7.13, 'Malformed VERCEL_BRANCH_URL with path segments fails closed',
+      res.valid === false && res.error?.includes('unexpected path segments'),
+      JSON.stringify(res)
+    );
+  });
+
+  // 7.14. Legitimate deployment instance VERCEL_URL origin accepted in preview
+  await withEnv({
+    VERCEL_ENV: 'preview',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL_URL: 'quantumjersey-deploy-inst1.vercel.app',
+    VERCEL_BRANCH_URL: 'quantumjersey-git-main-quantumdata.vercel.app'
+  }, async () => {
+    const resDeploy = validator.validateAppOrigin('https://quantumjersey-deploy-inst1.vercel.app');
+    assert(7.14, 'Legitimate deployment instance VERCEL_URL origin accepted in preview',
+      resDeploy.valid === true && resDeploy.origin === 'https://quantumjersey-deploy-inst1.vercel.app',
+      JSON.stringify(resDeploy)
+    );
+
+    // 7.15. Legitimate branch alias VERCEL_BRANCH_URL origin accepted in preview
+    const resBranch = validator.validateAppOrigin('https://quantumjersey-git-main-quantumdata.vercel.app');
+    assert(7.15, 'Legitimate branch alias VERCEL_BRANCH_URL origin accepted in preview',
+      resBranch.valid === true && resBranch.origin === 'https://quantumjersey-git-main-quantumdata.vercel.app',
+      JSON.stringify(resBranch)
+    );
+
+    // 7.16. Hostile Vercel origin outside deployment anchors strictly rejected in preview
+    const resHostile = validator.validateAppOrigin('https://another-project.vercel.app');
+    assert(7.16, 'Hostile Vercel origin outside deployment anchors rejected in preview',
+      resHostile.valid === false,
+      JSON.stringify(resHostile)
+    );
+  });
+
+  // 7.17. Legitimate APP_BASE_URL matching platform branch anchor accepted and preferred for callback
+  await withEnv({
+    VERCEL_ENV: 'preview',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL_URL: 'quantumjersey-deploy-hash123.vercel.app',
+    VERCEL_BRANCH_URL: 'quantumjersey-git-main-quantumdata.vercel.app',
+    APP_BASE_URL: 'https://quantumjersey-git-main-quantumdata.vercel.app'
+  }, async () => {
     const cb = validator.resolveTrustedCallbackUrl('/cart');
-    assert(7.6, 'resolveTrustedCallbackUrl fails closed on configuration conflict',
-      cb.valid === false && cb.error?.includes('Configuration conflict'),
+    assert(7.17, 'resolveTrustedCallbackUrl prefers configured APP_BASE_URL when tied to platform anchor',
+      cb.valid === true && cb.callbackUrl === 'https://quantumjersey-git-main-quantumdata.vercel.app/cart',
+      JSON.stringify(cb)
+    );
+  });
+
+  // 7.18. Production isolation: Preview origin strictly rejected in production even when VERCEL_URL is set
+  await withEnv({
+    VERCEL_ENV: 'production',
+    PAYSTACK_SECRET_KEY: 'sk_test_preview_key',
+    VERCEL_URL: 'quantumjersey-deploy-hash123.vercel.app',
+    VERCEL_BRANCH_URL: 'quantumjersey-git-main-quantumdata.vercel.app',
+    APP_BASE_URL: 'https://quantumjersey-git-main-quantumdata.vercel.app'
+  }, async () => {
+    const resBranch = validator.validateAppOrigin('https://quantumjersey-git-main-quantumdata.vercel.app');
+    assert(7.18, 'Production isolation: branch alias strictly rejected in production mode',
+      resBranch.valid === false && resBranch.error?.includes('not an approved merchant origin in production'),
+      JSON.stringify(resBranch)
+    );
+
+    // 7.19. Production isolation: Branch alias receives HTTP 403 by initialize handler in production
+    const initReq = {
+      method: 'POST',
+      headers: { origin: 'https://quantumjersey-git-main-quantumdata.vercel.app' },
+      body: { customer: { name: 'Test' }, items: [] }
+    };
+    const initRes = createMockRes();
+    await initHandler(initReq, initRes);
+    assert(7.19, 'Production isolation: initialize handler rejects branch alias with HTTP 403 Forbidden',
+      initRes.statusCode === 403,
+      JSON.stringify(initRes.body)
+    );
+
+    // 7.20. Production isolation: resolveTrustedCallbackUrl is strictly locked to canonical production domain
+    const cb = validator.resolveTrustedCallbackUrl('/cart');
+    assert(7.20, 'Production isolation: callback URL locked strictly to https://quantumjersey.vercel.app in production',
+      cb.valid === true && cb.callbackUrl === 'https://quantumjersey.vercel.app/cart',
       JSON.stringify(cb)
     );
   });
