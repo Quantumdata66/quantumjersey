@@ -10,8 +10,18 @@
 // ============================================================
 
 // 🔧 UPDATE THIS after hosting on Vercel:
-const SUPABASE_URL = window.QJ_SUPABASE_URL || "https://pbuntpobwsaddoexpmej.supabase.co";
-const SUPABASE_ANON_KEY = window.QJ_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBidW50cG9id3NhZGRvZXhwbWVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzAxNTksImV4cCI6MjA5NzcwNjE1OX0.DfqwSTlLtGBrmM-AgwqE1yXRLklmefuJo9TtHxMI5hI";
+const _isQJPreview = typeof window !== "undefined" && (
+  window.QJ_ENV === "preview" ||
+  (window.location &&
+   typeof window.location.hostname === "string" &&
+   window.location.hostname.endsWith(".vercel.app") &&
+   window.location.hostname !== "quantumjersey.vercel.app")
+);
+
+const SUPABASE_URL = window.QJ_SUPABASE_URL ||
+  (_isQJPreview ? "YOUR_PREVIEW_CONFIG_FAILED" : "https://pbuntpobwsaddoexpmej.supabase.co");
+const SUPABASE_ANON_KEY = window.QJ_SUPABASE_ANON_KEY ||
+  (_isQJPreview ? "DISABLED" : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBidW50cG9id3NhZGRvZXhwbWVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzAxNTksImV4cCI6MjA5NzcwNjE1OX0.DfqwSTlLtGBrmM-AgwqE1yXRLklmefuJo9TtHxMI5hI");
 const STORAGE_BUCKET = "product-images";
 const PAGE_SIZE = 24; // Products per page — scalable for 500+
 

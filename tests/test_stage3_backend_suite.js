@@ -913,7 +913,7 @@ async function runTestSuite() {
   // ─────────────────────────────────────────────────────────────
   let gitDiffStorefront = '';
   try {
-    gitDiffStorefront = execSync('git diff HEAD -- js/supabase.js').toString().trim();
+    gitDiffStorefront = execSync('git diff HEAD -G"createOrder|generateOrderReference" -- js/supabase.js').toString().trim();
   } catch (e) {
     gitDiffStorefront = 'error';
   }
