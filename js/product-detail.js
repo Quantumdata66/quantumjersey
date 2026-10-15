@@ -161,7 +161,7 @@ function renderProductDetailView(product) {
 
       <div class="detail-price-box">
         <span class="detail-price-num">${formatPrice(currentPrice)}</span>
-        <span class="detail-price-note">Tax included · Local dispatch rates apply</span>
+        <span class="detail-price-note">Delivery charges apply. Contact us to confirm delivery to your location.</span>
       </div>
 
       <p class="detail-description">${product.description}</p>
