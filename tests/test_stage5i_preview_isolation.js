@@ -443,6 +443,51 @@ async function runStage5iTestSuite() {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // 13. Regression: Static DEFAULT_PRODUCTS fallback processes without ReferenceError
+  // ─────────────────────────────────────────────────────────────
+  try {
+    // 1. Loading js/products.js executes top-level registerProducts(DEFAULT_PRODUCTS) without ReferenceError
+    let productsModule;
+    assert.doesNotThrow(() => {
+      delete require.cache[require.resolve('../js/products.js')];
+      productsModule = require('../js/products.js');
+    }, 'Loading js/products.js must not throw ReferenceError during DEFAULT_PRODUCTS registration');
+
+    assert.ok(productsModule, 'products.js module loaded successfully');
+    assert.ok(Array.isArray(productsModule.DEFAULT_PRODUCTS), 'DEFAULT_PRODUCTS is exported array');
+    assert.strictEqual(productsModule.DEFAULT_PRODUCTS.length, 14, 'All 14 default products are loaded');
+
+    // 2. Verify getProductById retrieves registered static fallback products
+    const sampleBoot = productsModule.getProductById('boots-001');
+    assert.ok(sampleBoot, 'Sample boots product retrieved from static registry');
+    assert.strictEqual(sampleBoot.name, 'Phantom Strike Pro');
+
+    const sampleJersey = productsModule.getProductById('jersey-001');
+    assert.ok(sampleJersey, 'Sample jersey product retrieved from static registry');
+    assert.strictEqual(sampleJersey.name, 'Nigeria Home Jersey 2024');
+
+    // 3. Verify browser-environment script evaluation executes cleanly
+    const productsSource = fs.readFileSync(path.resolve(__dirname, '../js/products.js'), 'utf8');
+    assert.doesNotThrow(() => {
+      const runBrowserScript = new Function('window', productsSource);
+      runBrowserScript({});
+    }, 'Browser script evaluation must not throw ReferenceError');
+
+    // 4. Verify parseProductVersions operates correctly on versioned and unversioned content
+    const verResult = productsModule.parseProductVersions('Test Jersey\n\n<!--QJ_VERSIONS:{"fan":{"price":28000,"sizes":["M","L"]}}-->');
+    assert.strictEqual(verResult.isVersioned, true, 'parseProductVersions parses version metadata');
+    assert.strictEqual(verResult.versions.fan.price, 28000);
+
+    const nonVerResult = productsModule.parseProductVersions('Plain item without versions');
+    assert.strictEqual(nonVerResult.isVersioned, false);
+    assert.strictEqual(nonVerResult.isCorrupt, false);
+
+    reportPass(13, 'Static DEFAULT_PRODUCTS fallback processes without ReferenceError (VERSION_METADATA_REGEX TDZ resolved)');
+  } catch (err) {
+    reportFail(13, 'Static DEFAULT_PRODUCTS fallback regression test failed', err);
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // Final Results
   // ─────────────────────────────────────────────────────────────
   console.log('\n================================================================');

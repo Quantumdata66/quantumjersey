@@ -3,6 +3,7 @@
 // ============================================================
 
 const WHATSAPP_NUMBER = "2348116154796";
+const VERSION_METADATA_REGEX = /(?:\r?\n\r?\n)?<!--QJ_VERSIONS:([\s\S]*?)-->/;
 
 // ─── Static Fallback Products ────────────────────────────────
 // Displayed when Supabase is not yet configured.
@@ -340,8 +341,6 @@ function buildMultiItemWhatsAppMessage(orderData, items) {
 
 // ─── Jersey Versions Helper Functions ─────────────────────────
 
-const VERSION_METADATA_REGEX = /(?:\r?\n\r?\n)?<!--QJ_VERSIONS:([\s\S]*?)-->/;
-
 /**
  * Normalizes a user- or client-supplied version string into 'fan' or 'player'.
  */
@@ -505,6 +504,7 @@ if (typeof module !== "undefined" && module.exports) {
     cleanProductDescription,
     formatProductDescription,
     normalizeVersionKey,
-    WHATSAPP_NUMBER
+    WHATSAPP_NUMBER,
+    VERSION_METADATA_REGEX
   };
 }
