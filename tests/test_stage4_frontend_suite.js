@@ -234,6 +234,9 @@ function setupMockEnvironment(initialSearch = '') {
   register('success-order-ref');
   register('success-whatsapp-link');
   register('qj-toast');
+  register('admin-orders-list');
+  register('admin-orders-pagination');
+  register('nav-orders-count-badge');
 
   global.window = mockWindow;
   global.document = mockDoc;
@@ -268,11 +271,12 @@ function setupMockEnvironment(initialSearch = '') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Load cart-ui.js
+// Load cart-ui.js and admin.js
 // ─────────────────────────────────────────────────────────────
 
 setupMockEnvironment();
 const cartUI = require('../js/cart-ui.js');
+const admin = require('../js/admin.js');
 
 // ─────────────────────────────────────────────────────────────
 // Test Suite Execution
@@ -336,6 +340,58 @@ async function runStage4TestSuite() {
     reportPass(1, 'WhatsApp/bank-transfer checkout path remains functional & intact');
   } catch (err) {
     reportFail(1, 'WhatsApp path failed', err);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 1.1. WhatsApp checkout handles order persistence failure safely
+  // ─────────────────────────────────────────────────────────────
+  try {
+    const { mockStorage } = setupMockEnvironment();
+    // Seed cart
+    mockStorage.setItem('qj_cart_v1', JSON.stringify([
+      { id: 'b1111111-1111-4111-8111-111111111111', name: 'Phantom Strike Pro', size: '42', quantity: 1, price: 65000 }
+    ]));
+
+    let openedWhatsAppUrl = null;
+    let createOrderCalled = false;
+    global.createOrder = async (payload) => {
+      createOrderCalled = true;
+      return {
+        data: payload,
+        error: { message: 'Database insert rejected by RLS' },
+        orderRef: payload.order_ref
+      };
+    };
+    global.window.open = (url) => {
+      openedWhatsAppUrl = url;
+      return { url };
+    };
+
+    // Switch to WhatsApp
+    cartUI.handlePaymentMethodChange('whatsapp');
+
+    // Fill form
+    elementRegistry.get('co-name').value = 'Musa Bello';
+    elementRegistry.get('co-phone').value = '08012345678';
+    elementRegistry.get('co-state').value = 'Lagos';
+    elementRegistry.get('co-city').value = 'Ikeja';
+    elementRegistry.get('co-address').value = '14 Allen Avenue';
+
+    // Submit
+    await cartUI.handleCheckoutSubmit({ preventDefault: () => {} });
+
+    assert(createOrderCalled, 'createOrder was called');
+    assert.strictEqual(openedWhatsAppUrl, null, 'WhatsApp window must NOT be opened when persistence fails');
+    assert.notStrictEqual(elementRegistry.get('qj-success-modal').style.display, 'flex', 'Success modal must NOT be shown when persistence fails');
+    const storedCart = JSON.parse(mockStorage.getItem('qj_cart_v1') || '[]');
+    assert.strictEqual(storedCart.length, 1, 'Cart items must NOT be cleared when persistence fails');
+    assert.strictEqual(elementRegistry.get('checkout-error').style.display, 'block', 'Checkout error element must be displayed');
+    assert(elementRegistry.get('checkout-error').textContent.includes('Database insert rejected by RLS'), 'Error element must display the failure reason');
+    assert.strictEqual(elementRegistry.get('btn-submit-order').disabled, false, 'Submit button must be re-enabled after failure');
+
+    reportPass('1.1', 'Failed cart order persistence halts checkout, displays error, and preserves cart');
+  } catch (err) {
+    reportFail('1.1', 'Cart persistence failure test failed', err);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -944,6 +1000,44 @@ async function runStage4TestSuite() {
     reportPass(15, 'Cart identity keeps Fan and Player versions separate with independent pricing');
   } catch (err) {
     reportFail(15, 'Cart identity test failed', err);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 16. Admin order fetch errors render clear error state
+  // ─────────────────────────────────────────────────────────────
+  try {
+    setupMockEnvironment();
+    const listEl = elementRegistry.get('admin-orders-list');
+
+    // Case 16A: Failed query returns error
+    global.fetchOrders = async () => ({
+      orders: [],
+      totalCount: 0,
+      hasMore: false,
+      page: 0,
+      error: 'JWT expired or RLS permission denied'
+    });
+
+    await admin.loadAdminOrders();
+
+    assert.strictEqual(listEl.children.length, 1, 'Should render 1 child element for error');
+    assert(listEl.children[0].textContent.includes('Error loading orders: JWT expired or RLS permission denied'), 'Error banner displays specific failure reason');
+    assert.notStrictEqual(listEl.innerHTML, '<p class="admin-empty">No orders found matching this filter.</p>', 'Failed query must NOT display empty order list message');
+
+    // Case 16B: Genuine zero orders returns empty state without error
+    global.fetchOrders = async () => ({
+      orders: [],
+      totalCount: 0,
+      hasMore: false,
+      page: 0
+    });
+
+    await admin.loadAdminOrders();
+    assert.strictEqual(listEl.innerHTML, '<p class="admin-empty">No orders found matching this filter.</p>', 'Genuinely empty result displays standard empty filter message');
+
+    reportPass(16, 'Admin order fetch errors display clear error state and preserve empty state on success');
+  } catch (err) {
+    reportFail(16, 'Admin order error handling test failed', err);
   }
 
   // ─────────────────────────────────────────────────────────────

@@ -736,6 +736,16 @@ async function handleCheckoutSubmit(event) {
         saveResult = await createOrder(orderPayload);
       }
 
+      if (saveResult && saveResult.error) {
+        const errorMsg = saveResult.error.message || saveResult.error.error_description || String(saveResult.error);
+        console.error("[QJ Checkout] Order persistence failed:", saveResult.error);
+        if (errorEl) {
+          errorEl.textContent = `Unable to place order: ${errorMsg}. Please try again.`;
+          errorEl.style.display = "block";
+        }
+        return;
+      }
+
       const finalOrderRef = saveResult?.orderRef || orderRef;
       orderPayload.order_ref = finalOrderRef;
 

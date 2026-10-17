@@ -277,6 +277,16 @@ async function loadAdminOrders() {
       pageSize: 25,
     }, _adminSession);
 
+    if (result && result.error) {
+      list.innerHTML = "";
+      const p = document.createElement("p");
+      p.className = "admin-empty";
+      p.style.color = "#f87171";
+      p.textContent = `⚠️ Error loading orders: ${result.error}. Please try again.`;
+      list.appendChild(p);
+      return;
+    }
+
     _adminOrdersCache = result.orders || [];
 
     // Update pending badge
@@ -294,7 +304,12 @@ async function loadAdminOrders() {
     renderAdminOrdersList(_adminOrdersCache, result.totalCount);
 
   } catch (err) {
-    list.innerHTML = `<p class="admin-empty" style="color:#f87171">Error loading orders: ${err.message}</p>`;
+    list.innerHTML = "";
+    const p = document.createElement("p");
+    p.className = "admin-empty";
+    p.style.color = "#f87171";
+    p.textContent = `Error loading orders: ${err.message}`;
+    list.appendChild(p);
   }
 }
 
@@ -1127,3 +1142,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("logout-btn")
     ?.addEventListener("click", handleLogout);
 });
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    loadAdminOrders,
+    renderAdminOrdersList,
+    handleAdminLogin,
+    handleLogout
+  };
+}
