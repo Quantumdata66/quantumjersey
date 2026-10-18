@@ -52,10 +52,14 @@ async function handleAdminLogin(e) {
 }
 
 async function handleLogout() {
-  await signOutAdmin();
+  if (typeof signOutAdmin === "function") {
+    await signOutAdmin();
+  }
   _adminSession = null;
-  document.getElementById("admin-panel").style.display = "none";
-  document.getElementById("login-gate").style.display  = "flex";
+  const adminPanel = document.getElementById("admin-panel");
+  if (adminPanel) adminPanel.style.display = "none";
+  const loginGate = document.getElementById("login-gate");
+  if (loginGate) loginGate.style.display  = "flex";
 }
 
 function enterAdminPanel() {
@@ -1170,6 +1174,7 @@ if (typeof module !== "undefined" && module.exports) {
     loadAdminOrders,
     renderAdminOrdersList,
     handleAdminLogin,
-    handleLogout
+    handleLogout,
+    setAdminSessionForTest: (s) => { _adminSession = s; }
   };
 }

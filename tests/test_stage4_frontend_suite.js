@@ -1150,6 +1150,7 @@ async function runStage4TestSuite() {
     // (v) orders-search autofilled with admin email is cleansed to prevent false empty filter
     {
       setupMockEnvironment();
+      await admin.handleLogout();
       const searchInput = elementRegistry.get('orders-search');
       searchInput.value = 'tairuazeez544@gmail.com';
 
