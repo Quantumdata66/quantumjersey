@@ -29,6 +29,9 @@ const PAGE_SIZE = 24; // Products per page — scalable for 500+
 let _supabase = null;
 
 function getSupabaseClient() {
+  if (typeof global !== "undefined" && global.getSupabaseClient && global.getSupabaseClient !== getSupabaseClient) {
+    return global.getSupabaseClient();
+  }
   if (_supabase) return _supabase;
   if (typeof supabase === "undefined" || typeof supabase.createClient !== "function") {
     console.warn("[QJ] Supabase SDK not loaded — falling back to local data.");
@@ -58,6 +61,9 @@ async function signOutAdmin() {
 }
 
 async function getAdminSession() {
+  if (typeof global !== "undefined" && global.getAdminSession && global.getAdminSession !== getAdminSession) {
+    return global.getAdminSession();
+  }
   const client = getSupabaseClient();
   if (!client) return null;
   const { data } = await client.auth.getSession();
@@ -429,7 +435,11 @@ async function createOrder(orderData) {
  */
 async function fetchOrders({ status = "all", search = null, page = 0, pageSize = 20 } = {}, session = null) {
   const client = getSupabaseClient();
-  if (!client || !session) {
+  if (client && !session && typeof getAdminSession === "function") {
+    session = await getAdminSession();
+  }
+
+  if (!client) {
     const local = JSON.parse(localStorage.getItem("qj_local_orders") || "[]");
     let filtered = [...local];
     if (status !== "all") filtered = filtered.filter(o => o.status === status);
@@ -438,7 +448,8 @@ async function fetchOrders({ status = "all", search = null, page = 0, pageSize =
       filtered = filtered.filter(o =>
         (o.order_ref || "").toLowerCase().includes(q) ||
         (o.customer_name || "").toLowerCase().includes(q) ||
-        (o.customer_phone || "").includes(q)
+        (o.customer_phone || "").includes(q) ||
+        (o.customer_email || "").toLowerCase().includes(q)
       );
     }
     const from = page * pageSize;
@@ -447,6 +458,16 @@ async function fetchOrders({ status = "all", search = null, page = 0, pageSize =
       totalCount: filtered.length,
       hasMore: from + pageSize < filtered.length,
       page,
+    };
+  }
+
+  if (!session) {
+    return {
+      orders: [],
+      totalCount: 0,
+      hasMore: false,
+      page,
+      error: "Admin session required to fetch orders. Please sign in again.",
     };
   }
 
@@ -462,7 +483,7 @@ async function fetchOrders({ status = "all", search = null, page = 0, pageSize =
     }
     if (search && search.trim()) {
       const q = search.trim();
-      query = query.or(`order_ref.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%`);
+      query = query.or(`order_ref.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%,customer_email.ilike.%${q}%`);
     }
 
     const { data, count, error } = await query;
@@ -486,8 +507,11 @@ async function fetchOrders({ status = "all", search = null, page = 0, pageSize =
 /**
  * Update order status (Admin only).
  */
-async function updateOrderStatus(orderId, newStatus, session) {
+async function updateOrderStatus(orderId, newStatus, session = null) {
   const client = getSupabaseClient();
+  if (client && !session && typeof getAdminSession === "function") {
+    session = await getAdminSession();
+  }
   if (!client || !session) throw new Error("Not authenticated or Supabase not configured.");
 
   const validStatuses = ["awaiting_confirmation", "confirmed", "processing", "dispatched", "delivered", "cancelled"];
@@ -509,8 +533,11 @@ async function updateOrderStatus(orderId, newStatus, session) {
 /**
  * Fetch a single order by ID or order_ref (Admin only).
  */
-async function fetchOrderById(orderIdOrRef, session) {
+async function fetchOrderById(orderIdOrRef, session = null) {
   const client = getSupabaseClient();
+  if (client && !session && typeof getAdminSession === "function") {
+    session = await getAdminSession();
+  }
   if (!client || !session) return null;
 
   try {
@@ -725,6 +752,17 @@ function formatBytes(bytes) {
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    fetchOrders,
+    fetchOrderById,
+    updateOrderStatus,
+    fetchDashboardStats,
+    getAdminSession,
+    getSupabaseClient,
+  };
 }
 
 

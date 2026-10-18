@@ -212,10 +212,11 @@ async function runStage5iTestSuite() {
       const content = fs.readFileSync(filePath, 'utf8');
 
       const configIdx = content.indexOf('<script src="/api/config.js"></script>');
-      const supabaseIdx = content.indexOf('<script src="js/supabase.js"></script>');
+      const supabaseMatch = content.match(/<script src="js\/supabase\.js(?:\?[^"]*)?"><\/script>/);
+      const supabaseIdx = supabaseMatch ? supabaseMatch.index : -1;
 
       assert.ok(configIdx !== -1, `${file} must include <script src="/api/config.js"></script>`);
-      assert.ok(supabaseIdx !== -1, `${file} must include <script src="js/supabase.js"></script>`);
+      assert.ok(supabaseIdx !== -1, `${file} must include <script src="js/supabase.js"></script> (or versioned variant)`);
       assert.ok(configIdx < supabaseIdx, `${file}: config script (pos ${configIdx}) must appear before supabase.js (pos ${supabaseIdx})`);
     });
 

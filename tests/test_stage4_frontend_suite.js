@@ -237,6 +237,7 @@ function setupMockEnvironment(initialSearch = '') {
   register('admin-orders-list');
   register('admin-orders-pagination');
   register('nav-orders-count-badge');
+  register('orders-search', 'input');
 
   global.window = mockWindow;
   global.document = mockDoc;
@@ -267,16 +268,19 @@ function setupMockEnvironment(initialSearch = '') {
     mockStorage.setItem('qj_cart_v1', JSON.stringify(items));
   };
 
+  global.DEFAULT_PRODUCTS = global.DEFAULT_PRODUCTS || [];
+  global.formatPrice = global.formatPrice || ((p) => '₦' + (Number(p) || 0).toLocaleString());
   return { mockWindow, mockDoc, mockStorage, mockSession };
 }
 
 // ─────────────────────────────────────────────────────────────
-// Load cart-ui.js and admin.js
+// Load cart-ui.js, admin.js, and supabase.js
 // ─────────────────────────────────────────────────────────────
 
 setupMockEnvironment();
 const cartUI = require('../js/cart-ui.js');
 const admin = require('../js/admin.js');
+const supabaseLib = require('../js/supabase.js');
 
 // ─────────────────────────────────────────────────────────────
 // Test Suite Execution
@@ -1038,6 +1042,136 @@ async function runStage4TestSuite() {
     reportPass(16, 'Admin order fetch errors display clear error state and preserve empty state on success');
   } catch (err) {
     reportFail(16, 'Admin order error handling test failed', err);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 17. Admin session re-hydration & fetchOrders regression suite
+  // ─────────────────────────────────────────────────────────────
+  try {
+    // (i) client present + no session + getAdminSession returns null -> fetchOrders returns error and does NOT read localStorage
+    {
+      const { mockStorage } = setupMockEnvironment();
+      mockStorage.setItem('qj_local_orders', JSON.stringify([
+        { id: 'loc-1', order_ref: 'LOCAL-1', status: 'awaiting_confirmation' }
+      ]));
+
+      global.getSupabaseClient = () => ({
+        from: () => ({
+          select: () => ({
+            order: () => ({
+              range: async () => ({ data: [], count: 0, error: null })
+            })
+          })
+        })
+      });
+      global.getAdminSession = async () => null;
+
+      const result = await supabaseLib.fetchOrders({}, null);
+      assert.ok(result.error, 'Must return error when client is present but session is null and unresolvable');
+      assert.strictEqual(result.orders.length, 0, 'Must NOT return orders from localStorage when client is configured');
+      assert.strictEqual(result.totalCount, 0, 'Total count must be 0 on unauthenticated fetch');
+    }
+
+    // (ii) client present + session present -> normal query path
+    {
+      setupMockEnvironment();
+      const mockOrders = [
+        { id: 'ord-101', order_ref: 'QJ-PROD-001', status: 'awaiting_confirmation', created_at: new Date().toISOString() }
+      ];
+
+      global.getSupabaseClient = () => ({
+        from: (table) => {
+          assert.strictEqual(table, 'orders', 'Must query orders table');
+          return {
+            select: () => ({
+              order: () => ({
+                range: async () => ({
+                  data: mockOrders,
+                  count: 1,
+                  error: null
+                })
+              })
+            })
+          };
+        }
+      });
+
+      const validSession = { user: { email: 'admin@quantumjersey.com', app_metadata: { role: 'admin' } } };
+      const result = await supabaseLib.fetchOrders({ page: 0, pageSize: 25 }, validSession);
+      assert.strictEqual(result.error, undefined, 'Must not return error for valid session query');
+      assert.strictEqual(result.orders.length, 1, 'Must return fetched order rows');
+      assert.strictEqual(result.orders[0].order_ref, 'QJ-PROD-001', 'Must match mock order reference');
+      assert.strictEqual(result.totalCount, 1, 'Must match total count');
+    }
+
+    // (iii) no client -> localStorage fallback works
+    {
+      const { mockStorage } = setupMockEnvironment();
+      mockStorage.setItem('qj_local_orders', JSON.stringify([
+        { id: 'loc-offline', order_ref: 'OFFLINE-ORDER', status: 'awaiting_confirmation' }
+      ]));
+
+      global.getSupabaseClient = () => null;
+
+      const result = await supabaseLib.fetchOrders({ status: 'all', page: 0, pageSize: 20 }, null);
+      assert.strictEqual(result.error, undefined, 'Offline fallback must not return error');
+      assert.strictEqual(result.orders.length, 1, 'Offline fallback reads localStorage');
+      assert.strictEqual(result.orders[0].order_ref, 'OFFLINE-ORDER', 'Matches stored offline order');
+      assert.strictEqual(result.totalCount, 1, 'Total count reflects local orders count');
+    }
+
+    // (iv) loadAdminOrders re-hydrates _adminSession when null
+    {
+      setupMockEnvironment();
+      const listEl = elementRegistry.get('admin-orders-list');
+
+      const rehydratedSession = {
+        user: { email: 'rehydrated-admin@quantumjersey.com', app_metadata: { role: 'admin' } }
+      };
+
+      global.getAdminSession = async () => rehydratedSession;
+
+      let capturedSession = null;
+      global.fetchOrders = async (params, session) => {
+        capturedSession = session;
+        return {
+          orders: [{ id: 'rehydrated-order', order_ref: 'QJ-REHYDRATED', status: 'awaiting_confirmation' }],
+          totalCount: 1
+        };
+      };
+
+      await admin.loadAdminOrders();
+
+      assert.ok(capturedSession !== null, 'loadAdminOrders must have re-hydrated and passed session');
+      assert.strictEqual(capturedSession.user.email, 'rehydrated-admin@quantumjersey.com', 'Passed session matches rehydrated session');
+      assert.ok(listEl.innerHTML.includes('QJ-REHYDRATED'), 'Orders rendered after re-hydration');
+    }
+
+    // (v) orders-search autofilled with admin email is cleansed to prevent false empty filter
+    {
+      setupMockEnvironment();
+      const searchInput = elementRegistry.get('orders-search');
+      searchInput.value = 'tairuazeez544@gmail.com';
+
+      global.getAdminSession = async () => ({
+        user: { email: 'tairuazeez544@gmail.com', app_metadata: { role: 'admin' } }
+      });
+
+      let capturedParams = null;
+      global.fetchOrders = async (params, session) => {
+        capturedParams = params;
+        return { orders: [{ id: 'clean-1', order_ref: 'QJ-CLEANSED' }], totalCount: 1 };
+      };
+
+      await admin.loadAdminOrders();
+
+      assert.strictEqual(searchInput.value, '', 'Autofilled admin email must be cleared from search input');
+      assert.strictEqual(capturedParams.search, '', 'Search query param must be empty string');
+    }
+
+    reportPass(17, 'Session re-hydration & fetchOrders regression suite: (i) client+no-session errors without localStorage leak; (ii) client+session queries Supabase; (iii) no client uses localStorage; (iv) loadAdminOrders re-hydrates null session; (v) autofilled admin email cleansed');
+  } catch (err) {
+    reportFail(17, 'Session re-hydration and fetchOrders regression suite failed', err);
   }
 
   // ─────────────────────────────────────────────────────────────

@@ -586,7 +586,9 @@
           <div style="background:var(--bg-surface-1);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;margin-bottom:20px;">
             <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
               <div style="flex:1;min-width:240px;position:relative;">
-                <input type="text" id="orders-search" placeholder="Search by Order Ref, Customer Name, Phone…"
+                <input type="search" id="orders-search" name="orders_search_query"
+                       autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false"
+                       placeholder="Search by Order Ref, Customer Name, Phone…"
                        style="width:100%;padding:10px 14px 10px 36px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-surface-2);color:var(--text-primary);font-size:0.86rem;outline:none;"/>
                 <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);">🔍</span>
               </div>
@@ -890,8 +892,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/products.js"></script>
 <script src="/api/config.js"></script>
-<script src="js/supabase.js"></script>
-<script src="js/admin.js"></script>
+<script src="js/supabase.js?v=20261018"></script>
+<script src="js/admin.js?v=20261018"></script>
 </body>
 </html>
 

@@ -270,6 +270,21 @@ async function loadAdminOrders() {
   list.innerHTML = `<p class="admin-empty">Loading orders…</p>`;
 
   try {
+    if (!_adminSession && typeof getAdminSession === "function") {
+      _adminSession = await getAdminSession();
+    }
+
+    const searchInput = document.getElementById("orders-search");
+    if (searchInput) {
+      const adminEmail = _adminSession?.user?.email || "";
+      if (adminEmail && searchInput.value.trim().toLowerCase() === adminEmail.toLowerCase()) {
+        searchInput.value = "";
+        _currentOrdersSearch = "";
+      } else if (!searchInput.value.trim()) {
+        _currentOrdersSearch = "";
+      }
+    }
+
     const result = await fetchOrders({
       status: _currentOrdersStatus,
       search: _currentOrdersSearch,
@@ -392,7 +407,14 @@ document.addEventListener("DOMContentLoaded", () => {
     let debounce;
     searchInput.addEventListener("input", e => {
       clearTimeout(debounce);
-      _currentOrdersSearch = e.target.value;
+      const val = e.target.value.trim();
+      const adminEmail = _adminSession?.user?.email || "";
+      if (adminEmail && val.toLowerCase() === adminEmail.toLowerCase()) {
+        e.target.value = "";
+        _currentOrdersSearch = "";
+      } else {
+        _currentOrdersSearch = val;
+      }
       debounce = setTimeout(() => {
         _currentOrdersPage = 0;
         loadAdminOrders();
