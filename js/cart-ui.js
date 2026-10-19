@@ -242,6 +242,9 @@ function injectCartUIElements() {
           <a id="success-whatsapp-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary" style="margin-top:12px;width:100%;justify-content:center;">
             <span>Open WhatsApp Chat Again</span>
           </a>
+          <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:12px;">
+            Need help? Email <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;">support@quantumjersey.com.ng</a> with your order reference.
+          </p>
         </div>
 
         <button class="btn-secondary" style="margin-top:14px;width:100%;justify-content:center;" onclick="handleFinishOrder()">
@@ -1141,7 +1144,7 @@ async function verifyPaymentReference(reference) {
         </div>
 
         <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:18px;">
-          📧 An official receipt has been sent to your email. Our fulfillment desk will reach out before courier dispatch.
+          📧 An official receipt has been sent to your email. For inquiries or dispatch assistance, contact <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;">support@quantumjersey.com.ng</a> or WhatsApp.
         </p>
 
         <div class="status-actions">
@@ -1208,7 +1211,7 @@ async function verifyPaymentReference(reference) {
           </div>
         </div>
         <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:18px;">
-          No worries! Your cart items have been preserved. You can retry online payment or switch to WhatsApp checkout.
+          No worries! Your cart items have been preserved. You can retry online payment, switch to WhatsApp, or email support at <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;">support@quantumjersey.com.ng</a>.
         </p>
         <div class="status-actions">
           <button class="btn-primary" style="width:100%;justify-content:center;" onclick="handleRetryCheckout()">
@@ -1241,7 +1244,7 @@ async function verifyPaymentReference(reference) {
           </div>
         </div>
         <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:18px;">
-          If money was deducted from your account, your order will be confirmed automatically via webhook notification.
+          If money was deducted from your account, your order will be confirmed automatically via webhook notification. For support, reach <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;">support@quantumjersey.com.ng</a>.
         </p>
         <div class="status-actions">
           <button class="btn-primary" style="width:100%;justify-content:center;" onclick="verifyPaymentReference('${escapeHtml(reference)}')">
