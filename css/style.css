@@ -977,6 +977,10 @@ p  { color: var(--text-secondary); }
   position: relative;
   overflow: hidden;
 }
+.contact-card > * {
+  position: relative;
+  z-index: 1;
+}
 .contact-card::before {
   content: '';
   position: absolute;
@@ -1019,6 +1023,23 @@ p  { color: var(--text-secondary); }
   width: 100%; 
   justify-content: center; 
   margin-top: 8px; 
+}
+
+/* Accessible Email & Mailto Support Links */
+a[href^="mailto:"] {
+  cursor: pointer;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  transition: color var(--transition), opacity var(--transition);
+}
+a[href^="mailto:"]:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+a[href^="mailto:"]:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 /* ── Order Steps ─────────────────────────────────────────── */
@@ -2923,7 +2944,7 @@ footer {
 
 .detail-features-strip {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 20px;
   margin: 50px 0;
   background: var(--bg-surface-1);

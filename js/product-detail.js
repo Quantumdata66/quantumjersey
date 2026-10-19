@@ -283,7 +283,7 @@ function renderProductDetailView(product) {
         </div>
         <div class="spec-card">
           <span class="spec-label">Support</span>
-          <strong class="spec-val"><a href="mailto:support@quantumjersey.com.ng" style="color:var(--text-primary);text-decoration:none;" title="Email Support">Email</a> & WhatsApp</strong>
+          <strong class="spec-val"><a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);text-decoration:underline;" title="Compose email to support@quantumjersey.com.ng">Email</a> & <a href="https://wa.me/2348116154796" target="_blank" rel="noopener" style="color:var(--accent-green);text-decoration:underline;" title="Chat with support on WhatsApp">WhatsApp</a></strong>
         </div>
       </div>
 
