@@ -206,10 +206,6 @@ function injectCartUIElements() {
             </svg>
             <span id="btn-submit-text">Pay Securely with Paystack</span>
           </button>
-
-          <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:14px;">
-            Need help with your order? Reach our support desk at <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;text-decoration:underline;" title="Compose email to support@quantumjersey.com.ng">support@quantumjersey.com.ng</a> or on WhatsApp.
-          </p>
         </form>
       </div>
     </div>
@@ -246,9 +242,6 @@ function injectCartUIElements() {
           <a id="success-whatsapp-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary" style="margin-top:12px;width:100%;justify-content:center;">
             <span>Open WhatsApp Chat Again</span>
           </a>
-          <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:12px;">
-            Need help? Email <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;text-decoration:underline;" title="Compose email to support@quantumjersey.com.ng">support@quantumjersey.com.ng</a> with your order reference.
-          </p>
         </div>
 
         <button class="btn-secondary" style="margin-top:14px;width:100%;justify-content:center;" onclick="handleFinishOrder()">
@@ -1148,7 +1141,7 @@ async function verifyPaymentReference(reference) {
         </div>
 
         <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:18px;">
-          📧 An official receipt has been sent to your email. For inquiries or dispatch assistance, contact <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;text-decoration:underline;" title="Compose email to support@quantumjersey.com.ng">support@quantumjersey.com.ng</a> or WhatsApp.
+          📧 An official receipt has been sent to your email. Our fulfillment desk will reach out before courier dispatch.
         </p>
 
         <div class="status-actions">
@@ -1181,9 +1174,6 @@ async function verifyPaymentReference(reference) {
             <span class="status-detail-value">${escapeHtml(data.status)}</span>
           </div>
         </div>
-        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:18px;">
-          For questions, refund processing, or dispute resolution, contact <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;text-decoration:underline;" title="Compose email to support@quantumjersey.com.ng">support@quantumjersey.com.ng</a> or WhatsApp.
-        </p>
         <div class="status-actions">
           <button class="btn-secondary" style="width:100%;justify-content:center;" onclick="closePaymentStatusModal()">
             Close
@@ -1218,7 +1208,7 @@ async function verifyPaymentReference(reference) {
           </div>
         </div>
         <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:18px;">
-          No worries! Your cart items have been preserved. You can retry online payment, switch to WhatsApp, or email support at <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;text-decoration:underline;" title="Compose email to support@quantumjersey.com.ng">support@quantumjersey.com.ng</a>.
+          No worries! Your cart items have been preserved. You can retry online payment or switch to WhatsApp checkout.
         </p>
         <div class="status-actions">
           <button class="btn-primary" style="width:100%;justify-content:center;" onclick="handleRetryCheckout()">
@@ -1251,7 +1241,7 @@ async function verifyPaymentReference(reference) {
           </div>
         </div>
         <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:18px;">
-          If money was deducted from your account, your order will be confirmed automatically via webhook notification. For support, reach <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;text-decoration:underline;" title="Compose email to support@quantumjersey.com.ng">support@quantumjersey.com.ng</a>.
+          If money was deducted from your account, your order will be confirmed automatically via webhook notification.
         </p>
         <div class="status-actions">
           <button class="btn-primary" style="width:100%;justify-content:center;" onclick="verifyPaymentReference('${escapeHtml(reference)}')">
@@ -1272,9 +1262,6 @@ async function verifyPaymentReference(reference) {
       <p style="font-size:0.88rem;color:var(--text-secondary);margin-bottom:18px;">
         ${escapeHtml(data.error || "Unable to locate a matching payment record.")}
       </p>
-      <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:18px;">
-        If your account was debited, your order will confirm automatically via webhook. Need assistance? Email <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;text-decoration:underline;" title="Compose email to support@quantumjersey.com.ng">support@quantumjersey.com.ng</a> with your payment reference.
-      </p>
       <div class="status-actions">
         <button class="btn-primary" style="width:100%;justify-content:center;" onclick="handleRetryCheckout()">
           Return to Cart
@@ -1292,9 +1279,6 @@ async function verifyPaymentReference(reference) {
       <h3 style="font-size:1.35rem;font-weight:800;margin-bottom:6px;">Network Connection Issue</h3>
       <p style="font-size:0.88rem;color:var(--text-secondary);margin-bottom:18px;">
         Unable to communicate with the verification server. Please check your internet connection. Your order and payment record are safe.
-      </p>
-      <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:18px;">
-        If this issue persists, please reach out to <a href="mailto:support@quantumjersey.com.ng" style="color:var(--accent-green);font-weight:700;text-decoration:underline;" title="Compose email to support@quantumjersey.com.ng">support@quantumjersey.com.ng</a> or via WhatsApp.
       </p>
       <div class="status-actions">
         <button class="btn-primary" style="width:100%;justify-content:center;" onclick="verifyPaymentReference('${escapeHtml(reference)}')">

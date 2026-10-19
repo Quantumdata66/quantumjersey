@@ -1176,14 +1176,13 @@ async function runStage4TestSuite() {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 18. Customer Support Email Links & Mailto Integrity Test
+  // 18. Customer Support Channel & Email Removal Verification
   // ─────────────────────────────────────────────────────────────
   try {
     const fs = require('fs');
     const path = require('path');
 
     const OFFICIAL_EMAIL = 'support@quantumjersey.com.ng';
-    const EXPECTED_MAILTO = `mailto:${OFFICIAL_EMAIL}`;
     const ROOT_DIR = path.resolve(__dirname, '..');
 
     const publicHtmlPages = [
@@ -1198,36 +1197,33 @@ async function runStage4TestSuite() {
       'review.html'
     ];
 
-    // (i) Validate all 9 public storefront pages contain the official support email and mailto links in footer
+    // (i) Validate all 9 public storefront pages have zero customer-facing email links and preserve WhatsApp
     for (const page of publicHtmlPages) {
       const filePath = path.join(ROOT_DIR, page);
       const content = fs.readFileSync(filePath, 'utf8');
 
-      assert.ok(content.includes(OFFICIAL_EMAIL), `${page} must contain official support email address`);
-      assert.ok(content.includes(`href="${EXPECTED_MAILTO}"`), `${page} must contain properly formatted mailto link`);
+      assert.ok(!content.includes(OFFICIAL_EMAIL), `${page} must not contain customer-facing email: ${OFFICIAL_EMAIL}`);
+      assert.ok(!content.includes('mailto:'), `${page} must not contain mailto links`);
 
-      // Ensure no malformed mailto schemes (e.g. mailto:// or extra spaces)
-      const mailtoMatches = content.match(/href=["']mailto:[^"']+["']/g) || [];
-      assert.ok(mailtoMatches.length >= 2, `${page} must feature at least 2 mailto links (footer column and footer icon)`);
-      for (const m of mailtoMatches) {
-        assert.ok(!m.includes('mailto://'), `${page} must not use malformed mailto:// scheme: ${m}`);
-        assert.ok(m.includes(EXPECTED_MAILTO), `${page} mailto link must target ${EXPECTED_MAILTO}: ${m}`);
-      }
+      // WhatsApp primary channel must be preserved
+      assert.ok(content.includes('https://wa.me/2348116154796'), `${page} must preserve primary WhatsApp support link`);
     }
 
-    // (ii) Validate contact.html specific cards and hero
+    // (ii) Validate contact.html specific cards, hero, and balanced layout
     {
       const contactHtml = fs.readFileSync(path.join(ROOT_DIR, 'contact.html'), 'utf8');
-      assert.ok(contactHtml.includes('id="contact-email-btn"'), 'contact.html must include contact-email-btn');
-      assert.ok(contactHtml.includes(`href="${EXPECTED_MAILTO}" class="btn-primary" id="contact-email-btn"`), 'contact-email-btn must target official mailto');
+      assert.ok(!contactHtml.includes('id="contact-email-btn"'), 'contact.html must not include contact-email-btn');
+      assert.ok(!contactHtml.includes('email-card'), 'contact.html must not include email-card');
       assert.ok(contactHtml.includes('id="contact-whatsapp-btn"'), 'contact.html must preserve WhatsApp contact button');
+      assert.ok(contactHtml.includes('id="contact-instagram-btn"'), 'contact.html must preserve Instagram button');
       assert.ok(contactHtml.includes('https://wa.me/2348116154796'), 'contact.html must preserve WhatsApp direct link');
     }
 
     // (iii) Validate faq.html policy answers and contact links
     {
       const faqHtml = fs.readFileSync(path.join(ROOT_DIR, 'faq.html'), 'utf8');
-      assert.ok(faqHtml.includes(`href="${EXPECTED_MAILTO}"`), 'faq.html must feature official mailto link in answers');
+      assert.ok(!faqHtml.includes(OFFICIAL_EMAIL), 'faq.html must not reference customer support email');
+      assert.ok(!faqHtml.includes('mailto:'), 'faq.html must not include mailto links');
       assert.ok(faqHtml.includes('https://wa.me/2348116154796'), 'faq.html must preserve WhatsApp support link');
       assert.ok(faqHtml.includes('contact.html'), 'faq.html must reference contact page');
     }
@@ -1236,37 +1232,35 @@ async function runStage4TestSuite() {
     {
       const productHtml = fs.readFileSync(path.join(ROOT_DIR, 'product.html'), 'utf8');
       assert.ok(productHtml.includes('detail-features-strip'), 'product.html has detail-features-strip');
-      assert.ok(productHtml.includes(`href="${EXPECTED_MAILTO}"`), 'product.html trust strip links to official email');
+      assert.ok(!productHtml.includes(OFFICIAL_EMAIL), 'product.html must not reference email');
+      assert.ok(!productHtml.includes('mailto:'), 'product.html must not include mailto links');
 
       const productDetailJs = fs.readFileSync(path.join(ROOT_DIR, 'js', 'product-detail.js'), 'utf8');
-      assert.ok(productDetailJs.includes(`href="${EXPECTED_MAILTO}"`), 'product-detail.js specs link to official email');
+      assert.ok(!productDetailJs.includes(OFFICIAL_EMAIL), 'product-detail.js must not reference email');
+      assert.ok(!productDetailJs.includes('mailto:'), 'product-detail.js must not include mailto links');
+      assert.ok(productDetailJs.includes('WhatsApp Sales Desk'), 'product-detail.js specs link to WhatsApp Sales Desk');
       assert.ok(productDetailJs.includes('https://wa.me/2348116154796'), 'product-detail.js specs link to official WhatsApp');
     }
 
     // (v) Validate js/cart-ui.js checkout and order status modals
     {
       const cartUiJs = fs.readFileSync(path.join(ROOT_DIR, 'js', 'cart-ui.js'), 'utf8');
-      assert.ok(cartUiJs.includes(`href="${EXPECTED_MAILTO}"`), 'cart-ui.js contains official mailto links');
-
-      // Check occurrences in modals: checkout form, success, terminal refunded, failed, pending, verification failed, network issue
-      const mailtoInCartUi = cartUiJs.match(/href=\\"mailto:support@quantumjersey\.com\.ng\\"|href="mailto:support@quantumjersey\.com\.ng"/g) || [];
-      assert.ok(mailtoInCartUi.length >= 7, `cart-ui.js must include mailto links across checkout and status modals (found ${mailtoInCartUi.length})`);
-
-      // Verify no fake JS claiming email was automatically sent without an email composer
-      assert.ok(!cartUiJs.includes('emailSentSuccess = true'), 'No fake JS claiming email was automatically sent');
+      assert.ok(!cartUiJs.includes(OFFICIAL_EMAIL), 'cart-ui.js must not contain customer support email');
+      assert.ok(!cartUiJs.includes('mailto:'), 'cart-ui.js must not contain mailto links');
+      assert.ok(cartUiJs.includes('success-whatsapp-link'), 'cart-ui.js preserves WhatsApp order success button');
     }
 
-    // (vi) Validate css/style.css accessibility and mobile wrapping
+    // (vi) Validate css/style.css clean removal of email styles and preservation of touch card rules
     {
       const styleCss = fs.readFileSync(path.join(ROOT_DIR, 'css', 'style.css'), 'utf8');
-      assert.ok(styleCss.includes('a[href^="mailto:"]'), 'style.css has dedicated mailto link styling');
-      assert.ok(styleCss.includes(':focus-visible'), 'style.css includes :focus-visible for mailto links');
+      assert.ok(!styleCss.includes('a[href^="mailto:"]'), 'style.css must not contain mailto link styling');
+      assert.ok(!styleCss.includes('.contact-card.email-card'), 'style.css must not contain email-card styling');
       assert.ok(styleCss.includes('.contact-card > *'), 'style.css ensures contact-card children sit above pseudo overlays');
     }
 
-    reportPass(18, 'Customer support email links & mailto integrity verified across all 9 storefront pages, modals, and style rules');
+    reportPass(18, 'Customer support email integration removed and WhatsApp primary support verified across all pages, modals, and style rules');
   } catch (err) {
-    reportFail(18, 'Customer support email links & mailto integrity test failed', err);
+    reportFail(18, 'Customer support channel verification failed', err);
   }
 
   // ─────────────────────────────────────────────────────────────

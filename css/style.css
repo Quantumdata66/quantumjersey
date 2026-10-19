@@ -991,12 +991,10 @@ p  { color: var(--text-secondary); }
 }
 .contact-card.wa-card::before { background: radial-gradient(ellipse at 50% 0%, rgba(37,211,102,0.08) 0%, transparent 60%); }
 .contact-card.ig-card::before { background: radial-gradient(ellipse at 50% 0%, rgba(168,85,247,0.08) 0%, transparent 60%); }
-.contact-card.email-card::before { background: radial-gradient(ellipse at 50% 0%, rgba(0,255,135,0.08) 0%, transparent 60%); }
 .contact-card:hover::before { opacity: 1; }
 .contact-card:hover { transform: translateY(-6px); }
 .contact-card.wa-card:hover { border-color: rgba(37,211,102,0.3); box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(37,211,102,0.1); }
 .contact-card.ig-card:hover { border-color: rgba(168,85,247,0.3); box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(168,85,247,0.1); }
-.contact-card.email-card:hover { border-color: rgba(0,255,135,0.3); box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,255,135,0.1); }
 .contact-icon {
   width: 80px; height: 80px;
   border-radius: 24px;
@@ -1012,34 +1010,12 @@ p  { color: var(--text-secondary); }
   background: rgba(168,85,247,0.12); 
   border: 1px solid rgba(168,85,247,0.2);
 }
-.contact-icon.email { 
-  background: rgba(0,255,135,0.12); 
-  border: 1px solid rgba(0,255,135,0.25);
-  color: var(--accent-green);
-}
 .contact-card h3 { font-size: 1.4rem; margin-bottom: 4px; }
 .contact-card p { font-size: 0.95rem; max-width: 280px; }
 .contact-card .btn-primary, .contact-card .btn-secondary { 
   width: 100%; 
   justify-content: center; 
   margin-top: 8px; 
-}
-
-/* Accessible Email & Mailto Support Links */
-a[href^="mailto:"] {
-  cursor: pointer;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  transition: color var(--transition), opacity var(--transition);
-}
-a[href^="mailto:"]:hover {
-  text-decoration: underline;
-  opacity: 0.85;
-}
-a[href^="mailto:"]:focus-visible {
-  outline: 2px solid var(--accent-green);
-  outline-offset: 3px;
-  border-radius: 4px;
 }
 
 /* ── Order Steps ─────────────────────────────────────────── */
@@ -2944,7 +2920,7 @@ footer {
 
 .detail-features-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   margin: 50px 0;
   background: var(--bg-surface-1);
