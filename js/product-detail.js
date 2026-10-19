@@ -91,6 +91,48 @@ function updateBreadcrumbs(product) {
   if (titleEl) {
     titleEl.textContent = product.name;
   }
+
+  initBreadcrumbDropdown();
+}
+
+/**
+ * Initialize accessible mobile breadcrumb dropdown behavior.
+ */
+function initBreadcrumbDropdown() {
+  const wrap = document.getElementById("bc-dropdown-wrap");
+  const toggle = document.getElementById("bc-dropdown-toggle");
+  const menu = document.getElementById("bc-dropdown-menu");
+  if (!wrap || !toggle || !menu || wrap._initialized) return;
+  wrap._initialized = true;
+
+  function closeMenu() {
+    wrap.classList.remove("open");
+    toggle.setAttribute("aria-expanded", "false");
+  }
+
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isOpen = wrap.classList.toggle("open");
+    toggle.setAttribute("aria-expanded", String(isOpen));
+  });
+
+  menu.querySelectorAll(".breadcrumb-dropdown-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      closeMenu();
+    });
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!wrap.contains(e.target)) {
+      closeMenu();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeMenu();
+    }
+  });
 }
 
 /**

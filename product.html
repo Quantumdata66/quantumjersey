@@ -65,10 +65,25 @@
   <div class="container">
     
     <!-- Breadcrumb Navigation -->
-    <nav class="breadcrumb-nav" aria-label="Breadcrumb">
-      <a href="index.html">Home</a>
+    <nav class="breadcrumb-nav" aria-label="Breadcrumb" id="product-breadcrumb-nav">
+      <a href="index.html" class="breadcrumb-link">Home</a>
       <span class="breadcrumb-sep">›</span>
-      <a href="catalog.html" id="bc-category">Catalog</a>
+      
+      <div class="breadcrumb-dropdown-wrap" id="bc-dropdown-wrap">
+        <a href="catalog.html" id="bc-category" class="breadcrumb-link">Catalog</a>
+        <button type="button" class="breadcrumb-dropdown-toggle" id="bc-dropdown-toggle" aria-expanded="false" aria-label="Browse categories">
+          <svg class="breadcrumb-dropdown-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="12" height="12">
+            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+          </svg>
+        </button>
+        <div class="breadcrumb-dropdown-menu" id="bc-dropdown-menu" role="menu">
+          <a href="catalog.html" class="breadcrumb-dropdown-item" role="menuitem">🛍️ All Products</a>
+          <a href="boots.html" class="breadcrumb-dropdown-item" role="menuitem">👟 Football Boots</a>
+          <a href="jerseys.html" class="breadcrumb-dropdown-item" role="menuitem">👕 Football Jerseys</a>
+          <a href="sportswear.html" class="breadcrumb-dropdown-item" role="menuitem">🏃 Sportswear</a>
+        </div>
+      </div>
+
       <span class="breadcrumb-sep">›</span>
       <span id="bc-title" class="breadcrumb-current">Product Details</span>
     </nav>
