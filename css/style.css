@@ -254,30 +254,45 @@ p  { color: var(--text-secondary); }
   padding: 8px;
   background: rgba(255,255,255,0.05);
   border-radius: var(--radius-sm);
-  transition: background var(--transition);
+  transition: background var(--transition), border-color var(--transition);
   border: 1px solid var(--border);
+  position: relative;
+  z-index: 1002;
+  cursor: pointer;
 }
 .hamburger:hover { background: rgba(255,255,255,0.1); }
+.hamburger.open,
+.hamburger.active {
+  background: rgba(255,255,255,0.12);
+  border-color: var(--border-accent);
+}
 .hamburger span {
   display: block; width: 22px; height: 2px;
   background: var(--text-primary);
   border-radius: 2px;
   transition: all 0.3s ease;
 }
-.hamburger.open span:nth-child(1) { transform: rotate(45deg) translate(5px, 5px); }
-.hamburger.open span:nth-child(2) { opacity: 0; transform: translateX(-5px); }
-.hamburger.open span:nth-child(3) { transform: rotate(-45deg) translate(5px, -5px); }
+.hamburger.open span:nth-child(1),
+.hamburger.active span:nth-child(1) { transform: rotate(45deg) translate(5px, 5px); }
+.hamburger.open span:nth-child(2),
+.hamburger.active span:nth-child(2) { opacity: 0; transform: translateX(-5px); }
+.hamburger.open span:nth-child(3),
+.hamburger.active span:nth-child(3) { transform: rotate(-45deg) translate(5px, -5px); }
 
 .mobile-menu {
   display: none;
   position: fixed;
-  inset: var(--nav-h) 0 0 0;
+  top: var(--nav-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(100dvh - var(--nav-h));
   background: rgba(6, 6, 16, 0.98);
   backdrop-filter: blur(40px);
   -webkit-backdrop-filter: blur(40px);
-  z-index: 999;
+  z-index: 1000;
   flex-direction: column;
-  padding: 24px 20px;
+  padding: 24px 20px 40px;
   gap: 6px;
   overflow-y: auto;
   border-top: 1px solid var(--border);
@@ -1476,8 +1491,23 @@ footer {
   .container { padding: 0 18px; }
 
   /* Nav */
+  .navbar {
+    position: sticky;
+    top: 0;
+    z-index: 1001;
+    background: rgba(6, 6, 16, 0.98);
+  }
   .nav-links { display: none; }
-  .hamburger { display: flex; }
+  .hamburger {
+    display: flex;
+    position: relative;
+    z-index: 1002;
+  }
+  .mobile-menu {
+    top: var(--nav-h);
+    height: calc(100dvh - var(--nav-h));
+    z-index: 1000;
+  }
 
   /* Hero (Mobile Spacing & Image Sizing) */
   .hero {
