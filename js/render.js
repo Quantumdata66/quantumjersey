@@ -283,15 +283,38 @@ async function initPageProducts(containerId, defaultCategory = "all") {
     if (currentCategory !== "all") options.category = currentCategory;
     if (currentSearch.trim()) options.search = currentSearch.trim();
 
-    const result = (typeof fetchProductsPaginated === "function")
-      ? await fetchProductsPaginated(options)
-      : { products: await fetchProducts(options), totalCount: 0, hasMore: false };
+    try {
+      const result = (typeof fetchProductsPaginated === "function")
+        ? await fetchProductsPaginated(options)
+        : { products: await fetchProducts(options), totalCount: 0, hasMore: false };
 
-    renderProducts(result.products, containerId, false);
-    totalMatchingCount = result.totalCount;
-    loadedProductsCount = result.products.length;
+      renderProducts(result.products, containerId, false);
+      totalMatchingCount = result.totalCount;
+      loadedProductsCount = result.products.length;
 
-    updatePaginationUI(result.hasMore);
+      updatePaginationUI(result.hasMore);
+    } catch (err) {
+      console.error("[QJ] Failed to load initial products:", err);
+      const fallback = (typeof DEFAULT_PRODUCTS !== "undefined" && Array.isArray(DEFAULT_PRODUCTS))
+        ? (currentCategory !== "all" ? DEFAULT_PRODUCTS.filter(p => p.category === currentCategory) : DEFAULT_PRODUCTS)
+        : [];
+      if (fallback.length > 0) {
+        renderProducts(fallback, containerId, false);
+        totalMatchingCount = fallback.length;
+        loadedProductsCount = fallback.length;
+        updatePaginationUI(false);
+      } else {
+        const container = document.getElementById(containerId);
+        if (container) {
+          container.innerHTML = `
+            <div class="empty-state" style="padding: 40px 20px; text-align: center;">
+              <p style="font-size: 1.1rem; color: var(--text-primary); margin-bottom: 8px;">⚠️ Unable to load products</p>
+              <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 16px;">Please check your connection and try again.</p>
+              <button class="btn-secondary" onclick="location.reload()" style="padding: 8px 18px; font-size: 0.85rem;">↻ Reload Page</button>
+            </div>`;
+        }
+      }
+    }
   }
 
   async function loadNextPage() {
@@ -378,9 +401,18 @@ async function updateHeroProductCount() {
 async function renderFeatured(containerId, count = 4) {
   showSkeletonGrid(containerId, count);
   updateHeroProductCount();
-  const products = await fetchProducts({ featuredOnly: true });
-  const fallback = products.length === 0 ? DEFAULT_PRODUCTS.slice(0, count) : products.slice(0, count);
-  renderProducts(fallback, containerId, false);
+  try {
+    const products = await fetchProducts({ featuredOnly: true });
+    const fallback = (!products || products.length === 0)
+      ? (typeof DEFAULT_PRODUCTS !== "undefined" ? DEFAULT_PRODUCTS.slice(0, count) : [])
+      : products.slice(0, count);
+    renderProducts(fallback, containerId, false);
+  } catch (err) {
+    console.error("[QJ] Failed to load featured products:", err);
+    if (typeof DEFAULT_PRODUCTS !== "undefined" && Array.isArray(DEFAULT_PRODUCTS)) {
+      renderProducts(DEFAULT_PRODUCTS.slice(0, count), containerId, false);
+    }
+  }
 }
 
 // ─── Shared UI: Hamburger, Navbar, Scroll Reveal ─────────────
@@ -458,8 +490,17 @@ document.addEventListener("DOMContentLoaded", () => {
           observer.unobserve(entry.target);
         }
       });
-    }, { threshold: 0.1, rootMargin: "0px 0px -50px 0px" });
-    animates.forEach(el => observer.observe(el));
+    }, { threshold: 0, rootMargin: "50px 0px 50px 0px" });
+
+    animates.forEach(el => {
+      // Immediately reveal elements that are already within or above the viewport
+      const rect = el.getBoundingClientRect();
+      if (rect.top <= (window.innerHeight || document.documentElement.clientHeight) + 50) {
+        el.classList.add("visible");
+      } else {
+        observer.observe(el);
+      }
+    });
   } else {
     animates.forEach(el => el.classList.add("visible"));
   }

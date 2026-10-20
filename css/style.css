@@ -1448,6 +1448,22 @@ footer {
   transform: translateY(0);
 }
 
+@media (max-width: 768px) {
+  .scroll-animate {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-animate {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
 /* ── Admin-specific ─────────────────────────────────────── */
 .admin-header {
   background: var(--bg-surface-1);
