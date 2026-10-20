@@ -146,7 +146,9 @@ function validateReference(ref) {
  * Production domain is quantumjersey.vercel.app.
  */
 const APPROVED_PRODUCTION_ORIGINS = [
-  'https://quantumjersey.vercel.app'
+  'https://quantumjersey.vercel.app',
+  'https://www.quantumjersey.com.ng',
+  'https://quantumjersey.com.ng'
 ];
 
 /**
@@ -529,13 +531,14 @@ function validateRequestOrigin(req) {
  * Rejects arbitrary client-provided callback URLs.
  *
  * @param {string} [clientProvidedUrlOrPath] - Optional path or URL provided by client
+ * @param {string} [requestOrigin] - Optional validated Origin header from the incoming request
  * @returns {{ valid: boolean, callbackUrl?: string, error?: string }}
  */
-function resolveTrustedCallbackUrl(clientProvidedUrlOrPath) {
+function resolveTrustedCallbackUrl(clientProvidedUrlOrPath, requestOrigin) {
   const vercelEnv = (process.env.VERCEL_ENV || '').trim().toLowerCase();
   const isPreview = vercelEnv === 'preview';
 
-  // 1. Resolve and validate server base URL
+  // 1. Resolve and validate server base URL (canonical fallback)
   let serverBaseUrl;
 
   if (isPreview) {
@@ -548,7 +551,7 @@ function resolveTrustedCallbackUrl(clientProvidedUrlOrPath) {
     }
     serverBaseUrl = `https://${previewConfig.primaryHost || previewConfig.trustedHost}`;
   } else if (vercelEnv === 'production') {
-    // Production callback URL is strictly restricted to canonical production domain
+    // Canonical production origin fallback
     serverBaseUrl = 'https://quantumjersey.vercel.app';
   } else {
     // Default / unset fallback resolves to canonical production domain unless explicitly configured
@@ -564,7 +567,7 @@ function resolveTrustedCallbackUrl(clientProvidedUrlOrPath) {
     };
   }
 
-  const trustedOrigin = baseValidation.origin;
+  let trustedOrigin = baseValidation.origin;
 
   // 2. If client supplied a value, inspect it
   let returnPath = '/';
@@ -589,12 +592,26 @@ function resolveTrustedCallbackUrl(clientProvidedUrlOrPath) {
         };
       }
 
+      // In production/local environments, an approved production origin determines the return base URL
+      if (!isPreview && APPROVED_PRODUCTION_ORIGINS.includes(clientOriginCheck.origin)) {
+        trustedOrigin = clientOriginCheck.origin;
+      }
+
       returnPath = clientParsed.pathname;
     } else if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.includes('\\')) {
       // Relative path supplied
       returnPath = trimmed.split('?')[0].split('#')[0];
     } else {
       return { valid: false, error: 'Invalid callback path format.' };
+    }
+  }
+
+  // If client provided a relative path and a valid requestOrigin was supplied,
+  // allow the validated request origin to set the approved return domain in production/local
+  if (!isPreview && requestOrigin && typeof requestOrigin === 'string' && trustedOrigin === baseValidation.origin) {
+    const reqOriginCheck = validateAppOrigin(requestOrigin.trim());
+    if (reqOriginCheck.valid && APPROVED_PRODUCTION_ORIGINS.includes(reqOriginCheck.origin)) {
+      trustedOrigin = reqOriginCheck.origin;
     }
   }
 

@@ -97,21 +97,86 @@ async function runTests() {
   console.log('\n=== Quantum Jersey Stage 5H: Origin Validation Hardening Suite ===\n');
 
   // ─────────────────────────────────────────────────────────────
-  // Scenario 1: Canonical production origin accepted
   // ─────────────────────────────────────────────────────────────
-  console.log('Scenario 1: Canonical production origin accepted');
+  // Scenario 1: Canonical and custom production origins accepted
+  // ─────────────────────────────────────────────────────────────
+  console.log('Scenario 1: Canonical and custom production origins accepted');
 
-  await withEnv({ VERCEL_ENV: 'production' }, async () => {
-    const res = validator.validateAppOrigin('https://quantumjersey.vercel.app');
+  await withEnv({ VERCEL_ENV: 'production', PAYSTACK_SECRET_KEY: 'sk_test_mock' }, async () => {
+    // 1.1 - 1.2: Canonical Vercel origin
+    const res1 = validator.validateAppOrigin('https://quantumjersey.vercel.app');
     assert(1.1, 'validateAppOrigin accepts canonical production origin in production',
-      res.valid === true && res.origin === 'https://quantumjersey.vercel.app'
+      res1.valid === true && res1.origin === 'https://quantumjersey.vercel.app'
     );
 
-    const reqCheck = validator.validateRequestOrigin({
+    const reqCheck1 = validator.validateRequestOrigin({
       headers: { origin: 'https://quantumjersey.vercel.app' }
     });
     assert(1.2, 'validateRequestOrigin accepts canonical production origin in production',
-      reqCheck.valid === true && reqCheck.origin === 'https://quantumjersey.vercel.app' && reqCheck.isPresent === true
+      reqCheck1.valid === true && reqCheck1.origin === 'https://quantumjersey.vercel.app' && reqCheck1.isPresent === true
+    );
+
+    // 1.3 - 1.4: Custom production domain www.quantumjersey.com.ng
+    const res2 = validator.validateAppOrigin('https://www.quantumjersey.com.ng');
+    assert(1.3, 'validateAppOrigin accepts custom domain https://www.quantumjersey.com.ng in production',
+      res2.valid === true && res2.origin === 'https://www.quantumjersey.com.ng'
+    );
+
+    const reqCheck2 = validator.validateRequestOrigin({
+      headers: { origin: 'https://www.quantumjersey.com.ng' }
+    });
+    assert(1.4, 'validateRequestOrigin accepts custom domain https://www.quantumjersey.com.ng in production',
+      reqCheck2.valid === true && reqCheck2.origin === 'https://www.quantumjersey.com.ng' && reqCheck2.isPresent === true
+    );
+
+    // 1.5 - 1.6: Custom production apex domain quantumjersey.com.ng
+    const res3 = validator.validateAppOrigin('https://quantumjersey.com.ng');
+    assert(1.5, 'validateAppOrigin accepts custom apex domain https://quantumjersey.com.ng in production',
+      res3.valid === true && res3.origin === 'https://quantumjersey.com.ng'
+    );
+
+    const reqCheck3 = validator.validateRequestOrigin({
+      headers: { origin: 'https://quantumjersey.com.ng' }
+    });
+    assert(1.6, 'validateRequestOrigin accepts custom apex domain https://quantumjersey.com.ng in production',
+      reqCheck3.valid === true && reqCheck3.origin === 'https://quantumjersey.com.ng' && reqCheck3.isPresent === true
+    );
+
+    // 1.7: resolveTrustedCallbackUrl returns approved origin for each domain
+    const cb1 = validator.resolveTrustedCallbackUrl('https://www.quantumjersey.com.ng/checkout.html');
+    const cb2 = validator.resolveTrustedCallbackUrl('/orders.html', 'https://quantumjersey.com.ng');
+    const cb3 = validator.resolveTrustedCallbackUrl('/cart');
+    assert(1.7, 'resolveTrustedCallbackUrl correctly resolves callback for each approved origin',
+      cb1.valid === true && cb1.callbackUrl === 'https://www.quantumjersey.com.ng/checkout' &&
+      cb2.valid === true && cb2.callbackUrl === 'https://quantumjersey.com.ng/orders' &&
+      cb3.valid === true && cb3.callbackUrl === 'https://quantumjersey.vercel.app/cart',
+      `cb1=${cb1.callbackUrl}, cb2=${cb2.callbackUrl}, cb3=${cb3.callbackUrl}`
+    );
+
+    // 1.8: initialize handler accepts custom domain without HTTP 403
+    const initReq = {
+      method: 'POST',
+      headers: { origin: 'https://www.quantumjersey.com.ng' },
+      body: {}
+    };
+    const initRes = createMockRes();
+    await initHandler(initReq, initRes);
+    assert(1.8, 'POST /api/paystack/initialize accepts approved custom domain without HTTP 403',
+      initRes.statusCode !== 403,
+      `statusCode=${initRes.statusCode}`
+    );
+
+    // 1.9: verify handler accepts custom domain without HTTP 403
+    const verifyReq = {
+      method: 'POST',
+      headers: { origin: 'https://www.quantumjersey.com.ng' },
+      body: {}
+    };
+    const verifyRes = createMockRes();
+    await verifyHandler(verifyReq, verifyRes);
+    assert(1.9, 'POST /api/paystack/verify accepts approved custom domain without HTTP 403',
+      verifyRes.statusCode !== 403,
+      `statusCode=${verifyRes.statusCode}`
     );
   });
 
@@ -300,7 +365,13 @@ async function runTests() {
       'https://attacker-quantumjersey.vercel.app',
       'https://quantumjersey-preview-branch.evil.com',
       'https://sub.quantumjersey-preview-branch.vercel.app',
-      'http://quantumjersey-preview-branch.vercel.app'
+      'http://quantumjersey-preview-branch.vercel.app',
+      'http://www.quantumjersey.com.ng',
+      'http://quantumjersey.com.ng',
+      'https://www.quantumjersey.com.ng.attacker.com',
+      'https://attacker-quantumjersey.com.ng',
+      'https://notquantumjersey.com.ng',
+      'https://www.quantumjersey.com.ng:8443'
     ];
 
     for (let i = 0; i < deceptiveOrigins.length; i++) {

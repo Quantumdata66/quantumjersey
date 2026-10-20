@@ -110,7 +110,10 @@ module.exports = async function handler(req, res) {
     }
 
     // 4.1. Validate and resolve trusted callback URL early (fail closed before DB mutation)
-    const callbackResult = resolveTrustedCallbackUrl(body.callback_url || body.return_path);
+    const callbackResult = resolveTrustedCallbackUrl(
+      body.callback_url || body.return_path,
+      originCheck.isPresent ? originCheck.origin : null
+    );
     if (!callbackResult.valid) {
       return res.status(400).json({
         success: false,

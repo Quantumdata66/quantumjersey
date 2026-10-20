@@ -87,6 +87,43 @@ withEnv({ VERCEL_ENV: 'production' }, () => {
     res443.valid === true && resBadPort.valid === false,
     `res443=${res443.valid}, resBadPort=${resBadPort.valid}`
   );
+
+  const resWww = validator.validateAppOrigin('https://www.quantumjersey.com.ng');
+  assert(4.1, 'Production mode accepts custom production domain https://www.quantumjersey.com.ng',
+    resWww.valid === true && resWww.origin === 'https://www.quantumjersey.com.ng',
+    JSON.stringify(resWww)
+  );
+
+  const resApex = validator.validateAppOrigin('https://quantumjersey.com.ng');
+  assert(4.2, 'Production mode accepts custom production apex domain https://quantumjersey.com.ng',
+    resApex.valid === true && resApex.origin === 'https://quantumjersey.com.ng',
+    JSON.stringify(resApex)
+  );
+
+  const resHttp1 = validator.validateAppOrigin('http://www.quantumjersey.com.ng');
+  const resHttp2 = validator.validateAppOrigin('http://quantumjersey.com.ng');
+  assert(4.3, 'Non-HTTPS versions of custom production domains are strictly rejected',
+    resHttp1.valid === false && resHttp2.valid === false && resHttp1.error?.includes('HTTPS'),
+    `resHttp1=${resHttp1.valid}, resHttp2=${resHttp2.valid}`
+  );
+
+  const resLookalike1 = validator.validateAppOrigin('https://www.quantumjersey.com.ng.evil.com');
+  const resLookalike2 = validator.validateAppOrigin('https://notquantumjersey.com.ng');
+  const resPort = validator.validateAppOrigin('https://www.quantumjersey.com.ng:8443');
+  assert(4.4, 'Lookalikes and custom ports for custom production domains are strictly rejected',
+    resLookalike1.valid === false && resLookalike2.valid === false && resPort.valid === false,
+    `lookalike1=${resLookalike1.valid}, lookalike2=${resLookalike2.valid}, port=${resPort.valid}`
+  );
+
+  const cbWww = validator.resolveTrustedCallbackUrl('https://www.quantumjersey.com.ng/cart.html');
+  const cbApex = validator.resolveTrustedCallbackUrl('https://quantumjersey.com.ng/jerseys.html');
+  const cbReqOrigin = validator.resolveTrustedCallbackUrl('/catalog.html', 'https://www.quantumjersey.com.ng');
+  assert(4.5, 'resolveTrustedCallbackUrl correctly selects and normalizes each approved custom production origin',
+    cbWww.valid === true && cbWww.callbackUrl === 'https://www.quantumjersey.com.ng/cart' &&
+    cbApex.valid === true && cbApex.callbackUrl === 'https://quantumjersey.com.ng/jerseys' &&
+    cbReqOrigin.valid === true && cbReqOrigin.callbackUrl === 'https://www.quantumjersey.com.ng/catalog',
+    `cbWww=${cbWww.callbackUrl}, cbApex=${cbApex.callbackUrl}, cbReqOrigin=${cbReqOrigin.callbackUrl}`
+  );
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -109,6 +146,12 @@ withEnv({
   assert(6, 'resolveTrustedCallbackUrl in preview uses verified VERCEL_URL base and normalizes path',
     cb.valid === true && cb.callbackUrl === 'https://quantumjersey-git-stage5-quantumdata66.vercel.app/cart',
     JSON.stringify(cb)
+  );
+
+  const cbCustomInPreview = validator.resolveTrustedCallbackUrl('https://www.quantumjersey.com.ng/cart.html');
+  assert(6.1, 'Preview isolation: resolveTrustedCallbackUrl locks callback to preview host and rejects leaking to production custom domain',
+    cbCustomInPreview.valid === true && cbCustomInPreview.callbackUrl === 'https://quantumjersey-git-stage5-quantumdata66.vercel.app/cart',
+    JSON.stringify(cbCustomInPreview)
   );
 });
 
