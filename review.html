@@ -109,33 +109,24 @@
       font-size: 3rem;
       margin-bottom: 12px;
     }
-    .product-select-row {
-      margin-bottom: 24px;
-    }
-    .product-select-dropdown {
+    .form-input-text {
       width: 100%;
       padding: 12px 14px;
       background: var(--bg-surface-2);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       color: var(--text-primary);
-      font-size: 0.92rem;
+      font-size: 0.9rem;
       outline: none;
       transition: border-color var(--transition);
+      box-sizing: border-box;
     }
-    .product-select-dropdown:focus {
+    .form-input-text:focus {
       border-color: var(--accent-green);
     }
     @media (max-width: 600px) {
       .review-page-card {
         padding: 22px;
-      }
-      .review-product-preview {
-        flex-direction: column;
-        text-align: center;
-      }
-      .review-product-img {
-        margin: 0 auto;
       }
     }
   </style>
@@ -274,23 +265,32 @@
 <script src="js/render.js"></script>
 
 <script>
-  let _selectedReviewProduct = null;
   let _selectedRating = 5;
+  let _allProducts = [];
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
 
   async function initReviewPage() {
     const urlParams = new URLSearchParams(window.location.search);
-    const productQuery = urlParams.get("product") || urlParams.get("id") || urlParams.get("slug");
+    const productQuery = (urlParams.get("product") || urlParams.get("id") || urlParams.get("slug") || "").trim();
 
-    // Fetch catalog to ensure database products are loaded
-    let allProducts = [];
+    // Fetch catalogue products in background to support confident matching
     if (typeof fetchProducts === "function") {
       try {
-        allProducts = await fetchProducts();
+        _allProducts = await fetchProducts();
       } catch (_) {
-        allProducts = typeof DEFAULT_PRODUCTS !== "undefined" ? DEFAULT_PRODUCTS : [];
+        _allProducts = typeof DEFAULT_PRODUCTS !== "undefined" ? DEFAULT_PRODUCTS : [];
       }
     } else {
-      allProducts = typeof DEFAULT_PRODUCTS !== "undefined" ? DEFAULT_PRODUCTS : [];
+      _allProducts = typeof DEFAULT_PRODUCTS !== "undefined" ? DEFAULT_PRODUCTS : [];
     }
 
     const loadingEl = document.getElementById("review-loading");
@@ -299,30 +299,25 @@
     if (loadingEl) loadingEl.style.display = "none";
     if (contentEl) contentEl.style.display = "block";
 
+    // Resolve initial product name from query parameter if present
+    let initialProductName = "";
     if (productQuery) {
-      // Look up product by id, slug, or matching name
-      let product = null;
+      let matched = null;
       if (typeof getProductById === "function") {
-        product = getProductById(productQuery);
+        matched = getProductById(productQuery);
       }
-      if (!product && allProducts.length > 0) {
+      if (!matched && _allProducts.length > 0) {
         const q = productQuery.toLowerCase();
-        product = allProducts.find(p =>
+        matched = _allProducts.find(p =>
           (p.id && p.id.toLowerCase() === q) ||
           (p.slug && p.slug.toLowerCase() === q) ||
           (p.name && p.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").includes(q))
         );
       }
-
-      if (product) {
-        _selectedReviewProduct = product;
-        renderReviewForm(product);
-      } else {
-        renderProductNotFoundState(productQuery, allProducts);
-      }
-    } else {
-      renderProductSelectionState(allProducts);
+      initialProductName = matched ? matched.name : productQuery;
     }
+
+    renderReviewForm(initialProductName);
   }
 
   function setRating(val) {
@@ -343,12 +338,13 @@
     if (label) label.textContent = labels[val] || `${val}.0`;
   }
 
-  function renderReviewForm(product) {
+  function renderReviewForm(initialProductName) {
     const contentEl = document.getElementById("review-content");
     if (!contentEl) return;
 
-    document.title = `Review ${product.name} | Quantum Jersey`;
-    const catLabel = typeof getCategoryLabel === "function" ? getCategoryLabel(product.category) : product.category;
+    if (initialProductName) {
+      document.title = `Review ${initialProductName} | Quantum Jersey`;
+    }
 
     contentEl.innerHTML = `
       <div style="margin-bottom:24px;">
@@ -360,19 +356,20 @@
         </p>
       </div>
 
-      <!-- Preselected Product Card -->
-      <div class="review-product-preview">
-        <img src="${product.image}" alt="${product.name}" class="review-product-img"
-             onerror="this.src='assets/images/boots_product.webp'"/>
-        <div class="review-product-meta">
-          <span class="review-product-badge">${catLabel}</span>
-          <h2 class="review-product-name">${product.name}</h2>
-          <div class="review-product-price">${formatPrice(product.price)}</div>
-        </div>
-      </div>
-
       <!-- Review Form -->
       <form id="previous-customer-review-form" onsubmit="handlePreviousCustomerReviewSubmit(event)">
+        <!-- Product Name (Free Text) -->
+        <div class="form-field" style="margin-bottom:18px;">
+          <label for="cust-product-name" style="font-size:0.84rem;font-weight:700;color:var(--text-primary);display:block;margin-bottom:6px;">
+            Which product did you buy? *
+          </label>
+          <input type="text" id="cust-product-name" name="product_name" required maxlength="150"
+                 placeholder="e.g. Real Madrid 2025/26 Home Jersey, Barcelona Away Jersey, Nike Mercurial Boots"
+                 value="${escapeHtml(initialProductName)}"
+                 class="form-input-text"/>
+          <span class="review-field-hint">Enter the product name as you remember it. It does not have to be listed on our website.</span>
+        </div>
+
         <!-- Rating -->
         <div class="form-field" style="margin-bottom:18px;">
           <label style="font-size:0.84rem;font-weight:700;color:var(--text-primary);display:block;margin-bottom:6px;">
@@ -395,9 +392,9 @@
           <label for="cust-name" style="font-size:0.84rem;font-weight:700;color:var(--text-primary);display:block;margin-bottom:6px;">
             Your Name or Nickname *
           </label>
-          <input type="text" id="cust-name" placeholder="e.g. Coach Samuel or Coach Dave" required
-                 style="width:100%;padding:12px 14px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:0.9rem;outline:none;"/>
-          <span class="review-field-hint">This name will be displayed publicly alongside your verified review.</span>
+          <input type="text" id="cust-name" name="customer_name" placeholder="e.g. Coach Samuel or Dave" required
+                 class="form-input-text"/>
+          <span class="review-field-hint">This name will be displayed publicly alongside your review.</span>
         </div>
 
         <!-- Review Text -->
@@ -405,9 +402,9 @@
           <label for="cust-review" style="font-size:0.84rem;font-weight:700;color:var(--text-primary);display:block;margin-bottom:6px;">
             Your Review *
           </label>
-          <textarea id="cust-review" rows="4" required minlength="3"
+          <textarea id="cust-review" name="review_text" rows="4" required minlength="3"
                     placeholder="Tell other ballers about the fit, quality, comfort, durability, and on-pitch performance…"
-                    style="width:100%;padding:12px 14px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:0.9rem;outline:none;line-height:1.5;"></textarea>
+                    class="form-input-text" style="line-height:1.5;resize:vertical;"></textarea>
           <span class="review-field-hint">Minimum 3 characters. Be honest and descriptive!</span>
         </div>
 
@@ -416,12 +413,12 @@
           <label for="cust-purchase-details" style="font-size:0.84rem;font-weight:700;color:var(--text-primary);display:block;margin-bottom:6px;">
             Purchase Details <span style="color:var(--text-muted);font-weight:normal;">(Optional verification note)</span>
           </label>
-          <input type="text" id="cust-purchase-details" placeholder="e.g. Bought via WhatsApp / Instagram in Lagos, Size 42"
-                 style="width:100%;padding:12px 14px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:0.9rem;outline:none;"/>
+          <input type="text" id="cust-purchase-details" name="purchase_details" placeholder="e.g. Bought via WhatsApp / Instagram in Lagos, Size 42"
+                 class="form-input-text"/>
           <span class="review-field-hint">Helps our admin team verify your purchase history and attach your verified badge.</span>
         </div>
 
-        <div id="review-submit-msg" class="review-feedback" style="display:none;"></div>
+        <div id="review-submit-msg" class="review-feedback" style="display:none;margin-bottom:18px;"></div>
 
         <button type="submit" id="btn-submit-review" class="btn-primary" style="width:100%;justify-content:center;padding:16px;font-size:1rem;font-weight:800;">
           Submit Review
@@ -430,94 +427,35 @@
     `;
   }
 
-  function renderProductNotFoundState(invalidQuery, allProducts) {
-    const contentEl = document.getElementById("review-content");
-    if (!contentEl) return;
-
-    const optionsHTML = allProducts.map(p => `
-      <option value="${p.id}">${p.name} (${formatPrice(p.price)})</option>
-    `).join("");
-
-    contentEl.innerHTML = `
-      <div class="review-state-box">
-        <div class="review-state-icon">⚠️</div>
-        <h2 style="font-size:1.4rem;color:var(--text-primary);margin-bottom:8px;">Product Not Found</h2>
-        <p style="color:var(--text-secondary);font-size:0.9rem;max-width:480px;margin:0 auto 20px;">
-          We couldn't locate a product matching <strong>"${invalidQuery}"</strong>. Please select your product from our catalog below to continue:
-        </p>
-
-        <div class="product-select-row" style="max-width:440px;margin:0 auto 20px;">
-          <select id="manual-product-select" class="product-select-dropdown" onchange="handleManualProductSelect(event)">
-            <option value="">-- Choose a Product to Review --</option>
-            ${optionsHTML}
-          </select>
-        </div>
-
-        <a href="catalog.html" class="btn-secondary" style="font-size:0.85rem;">Browse All Products</a>
-      </div>
-    `;
-  }
-
-  function renderProductSelectionState(allProducts) {
-    const contentEl = document.getElementById("review-content");
-    if (!contentEl) return;
-
-    const optionsHTML = allProducts.map(p => `
-      <option value="${p.id}">${p.name} (${formatPrice(p.price)})</option>
-    `).join("");
-
-    contentEl.innerHTML = `
-      <div style="text-align:center;margin-bottom:28px;">
-        <div style="font-size:2.5rem;margin-bottom:10px;">✍️</div>
-        <h1 style="font-size:1.6rem;font-weight:900;color:var(--text-primary);margin:0 0 8px;">
-          Leave a <span class="text-accent">Customer Review</span>
-        </h1>
-        <p style="color:var(--text-secondary);font-size:0.9rem;max-width:500px;margin:0 auto;">
-          Select the Quantum Jersey product you previously purchased to write your review:
-        </p>
-      </div>
-
-      <div class="product-select-row" style="max-width:460px;margin:0 auto 28px;">
-        <label style="display:block;font-size:0.84rem;font-weight:700;color:var(--text-primary);margin-bottom:8px;text-align:left;">
-          Choose Product:
-        </label>
-        <select id="manual-product-select" class="product-select-dropdown" onchange="handleManualProductSelect(event)">
-          <option value="">-- Select Your Product --</option>
-          ${optionsHTML}
-        </select>
-      </div>
-
-      <div style="text-align:center;">
-        <p style="font-size:0.8rem;color:var(--text-muted);">
-          Did you receive a direct review link on WhatsApp? Tapping your direct link will automatically select your item!
-        </p>
-      </div>
-    `;
-  }
-
-  function handleManualProductSelect(event) {
-    const productId = event.target.value;
-    if (!productId) return;
-    const product = typeof getProductById === "function" ? getProductById(productId) : null;
-    if (product) {
-      _selectedReviewProduct = product;
-      renderReviewForm(product);
-      // Update browser URL query without reload
-      if (window.history && window.history.replaceState) {
-        window.history.replaceState({}, "", `?product=${encodeURIComponent(productId)}`);
-      }
-    }
-  }
-
   async function handlePreviousCustomerReviewSubmit(event) {
     event.preventDefault();
-    if (!_selectedReviewProduct) return;
 
+    const productName = document.getElementById("cust-product-name")?.value.trim();
     const name = document.getElementById("cust-name")?.value.trim();
     const reviewText = document.getElementById("cust-review")?.value.trim();
     const purchaseDetails = document.getElementById("cust-purchase-details")?.value.trim() || null;
     const msgEl = document.getElementById("review-submit-msg");
     const submitBtn = document.getElementById("btn-submit-review");
+
+    if (!productName) {
+      if (msgEl) {
+        msgEl.textContent = "Please enter the name of the product you purchased.";
+        msgEl.className = "review-feedback error";
+        msgEl.style.display = "block";
+      }
+      document.getElementById("cust-product-name")?.focus();
+      return;
+    }
+
+    if (productName.length > 150) {
+      if (msgEl) {
+        msgEl.textContent = "Product name must be 150 characters or less.";
+        msgEl.className = "review-feedback error";
+        msgEl.style.display = "block";
+      }
+      document.getElementById("cust-product-name")?.focus();
+      return;
+    }
 
     if (!name || !reviewText) {
       if (msgEl) {
@@ -542,10 +480,28 @@
       submitBtn.textContent = "Submitting Review…";
     }
 
+    // Confident catalogue matching: check if typed name matches an exact catalogue product
+    let matchedProductId = null;
+    const clean = s => s.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+    const target = clean(productName);
+    if (target && Array.isArray(_allProducts) && _allProducts.length > 0) {
+      const match = _allProducts.find(p => {
+        const pName = p.name ? clean(p.name) : "";
+        const pProdName = p.product_name ? clean(p.product_name) : "";
+        const pSlug = p.slug ? clean(p.slug) : "";
+        const pId = p.id ? clean(p.id) : "";
+        return pName === target || pProdName === target || pSlug === target || pId === target;
+      });
+      if (match) {
+        matchedProductId = match.id;
+      }
+    }
+
     try {
       if (typeof submitReview === "function") {
         await submitReview({
-          productId: _selectedReviewProduct.id,
+          productId: matchedProductId,
+          productName: productName,
           rating: _selectedRating,
           reviewText: reviewText,
           customerName: name,
@@ -561,15 +517,15 @@
               <div class="review-state-icon" style="color:var(--accent-green);">🎉</div>
               <h2 style="font-size:1.5rem;color:var(--text-primary);margin-bottom:10px;">Review Submitted!</h2>
               <p style="color:var(--text-secondary);font-size:0.92rem;line-height:1.6;max-width:500px;margin:0 auto 24px;">
-                Thank you, <strong>${name}</strong>! Your review for <strong>${_selectedReviewProduct.name}</strong> has been received and sent to our team for verification.
+                Thank you, <strong>${escapeHtml(name)}</strong>! Your review for <strong>${escapeHtml(productName)}</strong> has been received and sent to our team for verification.
               </p>
               <div style="background:var(--bg-surface-2);border:1px solid var(--border-accent);border-radius:var(--radius-md);padding:16px;max-width:460px;margin:0 auto 24px;font-size:0.84rem;color:var(--text-secondary);text-align:left;">
                 🛡️ <strong>What happens next?</strong><br/>
-                Our merchant team will verify your review and publish it directly to the <strong>${_selectedReviewProduct.name}</strong> page with your Verified Purchase badge.
+                Our merchant team will review your feedback and publish it to Quantum Jersey once approved.
               </div>
               <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-                <a href="product.html?id=${_selectedReviewProduct.id}" class="btn-primary" style="font-size:0.88rem;">View Product Page</a>
-                <a href="catalog.html" class="btn-secondary" style="font-size:0.88rem;">Explore Store</a>
+                <a href="catalog.html" class="btn-primary" style="font-size:0.88rem;">Explore Store</a>
+                <a href="index.html" class="btn-secondary" style="font-size:0.88rem;">Back to Home</a>
               </div>
             </div>
           `;

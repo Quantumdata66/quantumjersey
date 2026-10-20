@@ -11,6 +11,16 @@ function getCategoryLabel(cat) {
   return { boots: "Football Boots", jerseys: "Jersey", sportswear: "Sportswear" }[cat] || cat;
 }
 
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 
 // ─── Auth ────────────────────────────────────────────────────
 
@@ -635,36 +645,53 @@ async function loadAdminReviews() {
 
       const dateStr = rev.created_at ? new Date(rev.created_at).toLocaleDateString("en-NG", { month: "short", day: "numeric", year: "numeric" }) : "";
 
+      // Format product name: prioritize customer-typed product_name, then catalogue product_name, then product_id fallback
+      const enteredName = rev.product_name ? escapeHtml(rev.product_name) : "";
+      const catalogueName = rev.products?.product_name ? escapeHtml(rev.products.product_name) : "";
+      let productDisplayHtml = "";
+
+      if (enteredName && catalogueName && enteredName.toLowerCase() !== catalogueName.toLowerCase()) {
+        productDisplayHtml = `<strong style="color:var(--text-primary);">${enteredName}</strong> <span style="font-size:0.75rem;color:var(--text-muted);">(Catalogue: ${catalogueName})</span>`;
+      } else if (enteredName) {
+        productDisplayHtml = `<strong style="color:var(--text-primary);">${enteredName}</strong>${!rev.product_id ? ' <span style="font-size:0.75rem;color:var(--accent-gold);">(Custom / Offline Item)</span>' : ''}`;
+      } else if (catalogueName) {
+        productDisplayHtml = `<strong style="color:var(--text-primary);">${catalogueName}</strong>`;
+      } else if (rev.product_id) {
+        productDisplayHtml = `<strong style="color:var(--text-primary);">Product ID: ${escapeHtml(rev.product_id)}</strong>`;
+      } else {
+        productDisplayHtml = `<strong style="color:var(--text-muted);">Unspecified Product</strong>`;
+      }
+
       return `
         <div class="admin-product-row" style="align-items:flex-start;padding:18px;margin-bottom:12px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--radius-md);">
           <div class="admin-product-info" style="flex:1;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
-              <strong style="font-size:0.95rem;color:var(--text-primary);">${rev.customer_name}</strong>
+              <strong style="font-size:0.95rem;color:var(--text-primary);">${escapeHtml(rev.customer_name || 'Verified Customer')}</strong>
               ${sourceBadge}
-              <span class="status-badge status-${rev.status}">${rev.status.toUpperCase()}</span>
+              <span class="status-badge status-${escapeHtml(rev.status)}">${escapeHtml(rev.status).toUpperCase()}</span>
               ${verifiedBadge}
-              <span style="color:var(--accent-gold);font-weight:700;margin-left:auto;">★ ${rev.rating}.0</span>
+              <span style="color:var(--accent-gold);font-weight:700;margin-left:auto;">★ ${parseInt(rev.rating, 10) || 5}.0</span>
             </div>
 
-            <p style="font-size:0.9rem;color:var(--text-primary);margin:6px 0;line-height:1.5;">"${rev.review_text}"</p>
+            <p style="font-size:0.9rem;color:var(--text-primary);margin:6px 0;line-height:1.5;">"${escapeHtml(rev.review_text)}"</p>
 
             <div style="font-size:0.78rem;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:6px;">
-              <span>Product: <strong style="color:var(--text-primary);">${rev.products?.product_name || rev.product_id}</strong></span>
-              ${rev.order_ref ? `<span>Order Ref: <strong style="color:var(--accent-green);">${rev.order_ref}</strong></span>` : ""}
-              ${dateStr ? `<span>Submitted: ${dateStr}</span>` : ""}
+              <span>Product: ${productDisplayHtml}</span>
+              ${rev.order_ref ? `<span>Order Ref: <strong style="color:var(--accent-green);">${escapeHtml(rev.order_ref)}</strong></span>` : ""}
+              ${dateStr ? `<span>Submitted: ${escapeHtml(dateStr)}</span>` : ""}
             </div>
 
             ${rev.purchase_details ? `
               <div style="font-size:0.8rem;color:var(--text-secondary);background:var(--bg-surface-1);border:1px solid var(--border);border-radius:var(--radius-xs);padding:8px 12px;margin-top:10px;">
-                💬 <strong>Previous Purchase Details:</strong> <em>${rev.purchase_details}</em>
+                💬 <strong>Previous Purchase Details:</strong> <em>${escapeHtml(rev.purchase_details)}</em>
               </div>
             ` : ""}
           </div>
 
-          <div class="admin-row-actions" style="margin-left:14px;flex-shrink:0;">
+          <div class="admin-row-actions" style="margin-left:14px;flex-shrink:0;display:flex;flex-direction:column;gap:6px;">
             ${rev.status !== "approved" ? `
-              <button class="btn-admin-feature" title="Verify purchase and publish review" onclick="handleModerateReview('${rev.id}', 'approved')">
-                ✓ Approve & Verify
+              <button class="btn-admin-feature" title="Approve and publish review" onclick="handleModerateReview('${rev.id}', 'approved')">
+                ✓ Approve
               </button>
             ` : ""}
             ${rev.status !== "rejected" ? `
@@ -672,15 +699,26 @@ async function loadAdminReviews() {
                 ✕ Reject
               </button>
             ` : ""}
+            <button class="btn-admin-edit" title="${rev.is_verified_purchase ? 'Remove verified badge' : 'Mark purchase as verified'}" onclick="handleToggleReviewVerification('${rev.id}', ${rev.is_verified_purchase ? 'true' : 'false'})" style="font-size:0.75rem;padding:6px 10px;">
+              ${rev.is_verified_purchase ? '🛡️ Unverify' : '🛡️ Mark Verified'}
+            </button>
+            <button class="btn-admin-delete" title="Permanently delete review" onclick="handleDeleteReview('${rev.id}')" style="font-size:0.75rem;padding:6px 10px;background:rgba(239,68,68,0.1);color:#f87171;border-color:rgba(239,68,68,0.3);">
+              🗑 Delete
+            </button>
           </div>
         </div>
       `;
     }).join("");
   } catch (err) {
-    container.innerHTML = `<p class="admin-empty" style="color:#f87171">Error loading reviews: ${err.message}</p>`;
+    container.innerHTML = `<p class="admin-empty" style="color:#f87171">Error loading reviews: ${escapeHtml(err.message)}</p>`;
   }
 }
 
+/**
+ * Moderate review status (approve or reject).
+ * NOTE: Moderation approval strictly updates publication status and does NOT automatically
+ * toggle purchase verification. Verification is an independent, explicit action.
+ */
 async function handleModerateReview(reviewId, newStatus) {
   const client = getSupabaseClient();
   if (!client || !_adminSession) return;
@@ -688,7 +726,6 @@ async function handleModerateReview(reviewId, newStatus) {
   try {
     const updatePayload = {
       status: newStatus,
-      is_verified_purchase: newStatus === "approved",
     };
 
     const { error } = await client
@@ -697,7 +734,52 @@ async function handleModerateReview(reviewId, newStatus) {
       .eq("id", reviewId);
 
     if (error) throw error;
-    showMsg(`✅ Review ${newStatus === 'approved' ? 'approved & verified' : 'rejected'}!`, "success");
+    showMsg(`✅ Review ${newStatus === 'approved' ? 'approved' : 'rejected'}!`, "success");
+    loadAdminReviews();
+  } catch (err) {
+    showMsg(`❌ Error: ${err.message}`, "error");
+  }
+}
+
+/**
+ * Toggle purchase verification status independently of approval status.
+ */
+async function handleToggleReviewVerification(reviewId, currentVerified) {
+  const client = getSupabaseClient();
+  if (!client || !_adminSession) return;
+
+  try {
+    const nextVerified = !currentVerified;
+    const { error } = await client
+      .from("reviews")
+      .update({ is_verified_purchase: nextVerified })
+      .eq("id", reviewId);
+
+    if (error) throw error;
+    showMsg(`✅ Review marked as ${nextVerified ? 'verified purchase' : 'unverified'}.`, "success");
+    loadAdminReviews();
+  } catch (err) {
+    showMsg(`❌ Error: ${err.message}`, "error");
+  }
+}
+
+/**
+ * Permanently delete a review record.
+ */
+async function handleDeleteReview(reviewId) {
+  const client = getSupabaseClient();
+  if (!client || !_adminSession) return;
+
+  if (!confirm("Are you sure you want to permanently delete this review?")) return;
+
+  try {
+    const { error } = await client
+      .from("reviews")
+      .delete()
+      .eq("id", reviewId);
+
+    if (error) throw error;
+    showMsg("✅ Review deleted.", "success");
     loadAdminReviews();
   } catch (err) {
     showMsg(`❌ Error: ${err.message}`, "error");

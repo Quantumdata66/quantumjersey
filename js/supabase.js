@@ -576,7 +576,7 @@ async function fetchProductReviews(productId) {
   try {
     const { data, error } = await client
       .from("reviews")
-      .select("id, product_id, rating, review_text, customer_name, is_verified_purchase, review_source, created_at")
+      .select("id, product_id, product_name, rating, review_text, customer_name, is_verified_purchase, review_source, created_at")
       .eq("product_id", productId)
       .eq("status", "approved")
       .order("created_at", { ascending: false });
@@ -603,17 +603,41 @@ async function fetchProductReviews(productId) {
 /**
  * Submit a customer review (defaults to 'pending' moderation status).
  * Supports both website order reviews and previous customer reviews.
+ * Allows free-text productName for historical/discontinued items where productId is null.
  * Public submissions are always unverified ('is_verified_purchase': false) until admin approves.
  */
-async function submitReview({ productId, rating, reviewText, customerName, orderRef = null, reviewSource = "website_order", purchaseDetails = null }) {
+async function submitReview({
+  productId = null,
+  productName = null,
+  rating,
+  reviewText,
+  customerName,
+  orderRef = null,
+  reviewSource = "website_order",
+  purchaseDetails = null,
+}) {
   const client = getSupabaseClient();
   const source = reviewSource === "previous_customer" ? "previous_customer" : "website_order";
 
+  const trimmedProductName = (productName || "").trim();
+  if (!productId && !trimmedProductName) {
+    throw new Error("Please enter the name of the product you purchased.");
+  }
+  if (trimmedProductName && trimmedProductName.length > 150) {
+    throw new Error("Product name must be 150 characters or less.");
+  }
+
+  const trimmedReviewText = (reviewText || "").trim();
+  if (trimmedReviewText.length < 3) {
+    throw new Error("Review must be at least 3 characters long.");
+  }
+
   const payload = {
-    product_id: productId,
+    product_id: productId || null,
+    product_name: trimmedProductName || null,
     order_ref: (source === "website_order" && orderRef) ? orderRef.trim() : null,
     rating: Math.max(1, Math.min(5, parseInt(rating, 10) || 5)),
-    review_text: (reviewText || "").trim(),
+    review_text: trimmedReviewText,
     customer_name: customerName?.trim() || "Verified Customer",
     status: "pending",
     is_verified_purchase: false,
@@ -633,6 +657,9 @@ async function submitReview({ productId, rating, reviewText, customerName, order
     if (error) {
       if (error.code === "23505") {
         throw new Error("A review has already been submitted for this order.");
+      }
+      if (error.code === "23502" && error.message && error.message.includes("product_id")) {
+        throw new Error("Database schema update pending: product_id nullability migration required.");
       }
       throw error;
     }
@@ -762,6 +789,8 @@ if (typeof module !== "undefined" && module.exports) {
     fetchDashboardStats,
     getAdminSession,
     getSupabaseClient,
+    submitReview,
+    fetchProductReviews,
   };
 }
 

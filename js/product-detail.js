@@ -520,6 +520,7 @@ async function handleReviewSubmit(event) {
     if (typeof submitReview === "function") {
       const res = await submitReview({
         productId: _currentProduct.id,
+        productName: _currentProduct.name,
         orderRef,
         customerName: name,
         rating: parseInt(rating, 10),
