@@ -5,6 +5,9 @@
 
 let _adminSession = null;
 let _uploadedFile = null;
+let _adminProductsCache = [];
+let _currentEditingProduct = null;
+let _editReplacementFile = null;
 
 // ─── Helpers ─────────────────────────────────────────────────
 function getCategoryLabel(cat) {
@@ -1091,6 +1094,7 @@ async function loadAdminProductList() {
 
   try {
     const products = await fetchProducts();
+    _adminProductsCache = products || [];
 
     if (products.length === 0) {
       list.innerHTML = `<p class="admin-empty">No products yet.</p>`;
@@ -1109,6 +1113,16 @@ async function loadAdminProductList() {
           ${p.featured ? '<span class="admin-featured-tag">⭐ Featured</span>' : ""}
         </div>
         <div class="admin-row-actions">
+          <button class="btn-admin-edit"
+                  title="Edit product"
+                  onclick="openEditProductModal('${p.id}')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+            </svg>
+            Edit
+          </button>
           <button class="btn-admin-feature"
                   title="${p.featured ? "Remove from featured" : "Mark as featured"}"
                   onclick="handleToggleFeatured('${p.id}', ${!p.featured})">
@@ -1128,6 +1142,372 @@ async function loadAdminProductList() {
     `).join("");
   } catch (err) {
     list.innerHTML = `<p class="admin-empty" style="color:#f87171">Error: ${err.message}</p>`;
+  }
+}
+
+// ─── Edit Product Modal Logic ────────────────────────────────
+
+function openEditProductModal(productId) {
+  let prod = _adminProductsCache.find(p => p.id === productId);
+  if (!prod && typeof getProductById === "function") {
+    prod = getProductById(productId);
+  }
+  if (!prod) {
+    showMsg("❌ Could not find product to edit.", "error");
+    return;
+  }
+
+  _currentEditingProduct = prod;
+  _editReplacementFile = null;
+
+  // Set modal header
+  const titleNameEl = document.getElementById("edit-modal-title-name");
+  if (titleNameEl) titleNameEl.textContent = prod.name || "Product";
+
+  // Name, Category, Badge, Featured, Stock
+  const nameInput = document.getElementById("edit-prod-name");
+  if (nameInput) nameInput.value = prod.name || "";
+
+  const catSelect = document.getElementById("edit-prod-category");
+  if (catSelect) catSelect.value = prod.category || "jerseys";
+
+  const badgeInput = document.getElementById("edit-prod-badge");
+  if (badgeInput) badgeInput.value = prod.badge || "";
+
+  const featuredCheck = document.getElementById("edit-prod-featured");
+  if (featuredCheck) featuredCheck.checked = Boolean(prod.featured);
+
+  const stockCheck = document.getElementById("edit-prod-in-stock");
+  if (stockCheck) stockCheck.checked = (prod.in_stock !== false && prod.inStock !== false);
+
+  // Description (clean description text)
+  const descEl = document.getElementById("edit-prod-desc");
+  if (descEl) {
+    descEl.value = (typeof cleanProductDescription === "function")
+      ? cleanProductDescription(prod.description)
+      : (prod.description || "");
+  }
+
+  // Versioned vs non-versioned setup
+  const verInfo = prod.versions
+    ? { isVersioned: true, versions: prod.versions }
+    : (typeof parseProductVersions === "function" && prod.description
+        ? parseProductVersions(prod.description)
+        : { isVersioned: false });
+
+  const hasVersions = (prod.category === "jerseys") && verInfo.isVersioned && verInfo.versions;
+  const versionsCheck = document.getElementById("edit-prod-has-versions");
+  if (versionsCheck) versionsCheck.checked = Boolean(hasVersions);
+
+  if (hasVersions) {
+    const fPrice = document.getElementById("edit-prod-fan-price");
+    if (fPrice) fPrice.value = verInfo.versions.fan?.price || "";
+    const fSizes = document.getElementById("edit-prod-fan-sizes");
+    if (fSizes) fSizes.value = Array.isArray(verInfo.versions.fan?.sizes) ? verInfo.versions.fan.sizes.join(", ") : "";
+
+    const pPrice = document.getElementById("edit-prod-player-price");
+    if (pPrice) pPrice.value = verInfo.versions.player?.price || "";
+    const pSizes = document.getElementById("edit-prod-player-sizes");
+    if (pSizes) pSizes.value = Array.isArray(verInfo.versions.player?.sizes) ? verInfo.versions.player.sizes.join(", ") : "";
+
+    const priceInput = document.getElementById("edit-prod-price");
+    if (priceInput) priceInput.value = prod.price || verInfo.versions.fan?.price || "";
+    const sizesInput = document.getElementById("edit-prod-sizes");
+    if (sizesInput) sizesInput.value = Array.isArray(prod.sizes) ? prod.sizes.join(", ") : "";
+  } else {
+    const priceInput = document.getElementById("edit-prod-price");
+    if (priceInput) priceInput.value = (typeof prod.price === "number") ? prod.price : "";
+
+    const hasSizes = Array.isArray(prod.sizes) && prod.sizes.length > 0;
+    const hasSizesCheck = document.getElementById("edit-prod-has-sizes");
+    if (hasSizesCheck) hasSizesCheck.checked = hasSizes;
+
+    const sizesInput = document.getElementById("edit-prod-sizes");
+    if (sizesInput) sizesInput.value = hasSizes ? prod.sizes.join(", ") : "";
+
+    const fPrice = document.getElementById("edit-prod-fan-price");
+    if (fPrice) fPrice.value = "";
+    const fSizes = document.getElementById("edit-prod-fan-sizes");
+    if (fSizes) fSizes.value = "";
+    const pPrice = document.getElementById("edit-prod-player-price");
+    if (pPrice) pPrice.value = "";
+    const pSizes = document.getElementById("edit-prod-player-sizes");
+    if (pSizes) pSizes.value = "";
+  }
+
+  // Image preview setup
+  const currentImg = document.getElementById("edit-img-current-preview");
+  if (currentImg) {
+    currentImg.src = prod.image || prod.image_url || "assets/images/boots_product.webp";
+  }
+  const fileInput = document.getElementById("edit-image-picker");
+  if (fileInput) fileInput.value = "";
+  const newWrap = document.getElementById("edit-img-new-wrap");
+  if (newWrap) newWrap.style.display = "none";
+
+  // Clear any existing error
+  const errEl = document.getElementById("edit-product-error");
+  if (errEl) {
+    errEl.textContent = "";
+    errEl.style.display = "none";
+  }
+
+  // Update layout visibility
+  updateEditFormVisibility();
+
+  // Show modal
+  const modal = document.getElementById("admin-edit-product-modal");
+  if (modal) modal.style.display = "flex";
+}
+
+function closeEditProductModal() {
+  const modal = document.getElementById("admin-edit-product-modal");
+  if (modal) modal.style.display = "none";
+  _currentEditingProduct = null;
+  _editReplacementFile = null;
+  const fileInput = document.getElementById("edit-image-picker");
+  if (fileInput) fileInput.value = "";
+  const newWrap = document.getElementById("edit-img-new-wrap");
+  if (newWrap) newWrap.style.display = "none";
+}
+
+function handleAdminEditProductModalBackdrop(e) {
+  if (e.target && e.target.id === "admin-edit-product-modal") {
+    closeEditProductModal();
+  }
+}
+
+function handleEditCategoryChange() {
+  updateEditFormVisibility();
+}
+
+function handleEditVersionsToggle() {
+  updateEditFormVisibility();
+}
+
+function handleEditHasSizesToggle() {
+  updateEditFormVisibility();
+}
+
+function updateEditFormVisibility() {
+  const cat = document.getElementById("edit-prod-category")?.value;
+  const isJersey = cat === "jerseys";
+  const hasVersionsCheck = document.getElementById("edit-prod-has-versions");
+  const hasVersions = isJersey && (hasVersionsCheck?.checked ?? false);
+
+  const versionsWrap = document.getElementById("edit-prod-jersey-versions-wrap");
+  if (versionsWrap) versionsWrap.style.display = isJersey ? "block" : "none";
+
+  const versionsInputs = document.getElementById("edit-prod-jersey-versions-inputs");
+  if (versionsInputs) versionsInputs.style.display = hasVersions ? "block" : "none";
+
+  const priceWrap = document.getElementById("edit-prod-price-wrap");
+  const priceInput = document.getElementById("edit-prod-price");
+  const sizesWrap = document.getElementById("edit-prod-sizes-wrap");
+  const sizesInput = document.getElementById("edit-prod-sizes");
+  const hasSizes = document.getElementById("edit-prod-has-sizes")?.checked ?? true;
+  const sizesGroup = document.getElementById("edit-prod-sizes-group");
+
+  if (hasVersions) {
+    if (priceWrap) priceWrap.style.display = "none";
+    if (sizesWrap) sizesWrap.style.display = "none";
+    if (priceInput) priceInput.required = false;
+    if (sizesInput) sizesInput.required = false;
+  } else {
+    if (priceWrap) priceWrap.style.display = "block";
+    if (priceInput) priceInput.required = true;
+    if (sizesWrap) sizesWrap.style.display = "block";
+    if (sizesGroup) sizesGroup.style.display = hasSizes ? "block" : "none";
+    if (sizesInput) sizesInput.required = hasSizes;
+  }
+}
+
+function handleEditImageSelect(e) {
+  const file = e.target.files?.[0];
+  const errEl = document.getElementById("edit-product-error");
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    if (errEl) {
+      errEl.textContent = "Please select a valid image file (JPG, PNG, or WEBP).";
+      errEl.style.display = "block";
+    }
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    if (errEl) {
+      errEl.textContent = "Image must be under 10 MB.";
+      errEl.style.display = "block";
+    }
+    return;
+  }
+
+  _editReplacementFile = file;
+  if (errEl) errEl.style.display = "none";
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const preview = document.getElementById("edit-img-new-preview");
+    if (preview) preview.src = ev.target.result;
+    const wrap = document.getElementById("edit-img-new-wrap");
+    if (wrap) wrap.style.display = "block";
+  };
+  reader.readAsDataURL(file);
+}
+
+function cancelEditImageReplacement() {
+  _editReplacementFile = null;
+  const fileInput = document.getElementById("edit-image-picker");
+  if (fileInput) fileInput.value = "";
+  const wrap = document.getElementById("edit-img-new-wrap");
+  if (wrap) wrap.style.display = "none";
+}
+
+async function handleSaveEditProduct(e) {
+  if (e && typeof e.preventDefault === "function") e.preventDefault();
+
+  if (!_currentEditingProduct) {
+    showMsg("❌ No product selected for editing.", "error");
+    return;
+  }
+
+  const errEl = document.getElementById("edit-product-error");
+  if (errEl) {
+    errEl.textContent = "";
+    errEl.style.display = "none";
+  }
+
+  const name = document.getElementById("edit-prod-name")?.value.trim();
+  const category = document.getElementById("edit-prod-category")?.value;
+  const isJersey = category === "jerseys";
+  const hasVersions = isJersey && (document.getElementById("edit-prod-has-versions")?.checked ?? false);
+  const rawDesc = document.getElementById("edit-prod-desc")?.value.trim();
+  const badge = document.getElementById("edit-prod-badge")?.value.trim() || null;
+  const featured = Boolean(document.getElementById("edit-prod-featured")?.checked);
+  const inStock = Boolean(document.getElementById("edit-prod-in-stock")?.checked);
+
+  let price = 0;
+  let sizes = [];
+  let description = "";
+
+  if (hasVersions) {
+    const fanPrice = parseInt(document.getElementById("edit-prod-fan-price")?.value.trim() || "0", 10);
+    const fanSizes = (document.getElementById("edit-prod-fan-sizes")?.value.trim() || "").split(",").map(s => s.trim()).filter(Boolean);
+    const playerPrice = parseInt(document.getElementById("edit-prod-player-price")?.value.trim() || "0", 10);
+    const playerSizes = (document.getElementById("edit-prod-player-sizes")?.value.trim() || "").split(",").map(s => s.trim()).filter(Boolean);
+
+    if (!name || !category || !rawDesc) {
+      if (errEl) {
+        errEl.textContent = "Please fill in all required fields (Name, Category, Description).";
+        errEl.style.display = "block";
+      }
+      return;
+    }
+    if (!fanPrice || fanPrice < 1 || fanSizes.length === 0) {
+      if (errEl) {
+        errEl.textContent = "Please enter a valid Fan Version price and at least one size.";
+        errEl.style.display = "block";
+      }
+      return;
+    }
+    if (!playerPrice || playerPrice < 1 || playerSizes.length === 0) {
+      if (errEl) {
+        errEl.textContent = "Please enter a valid Player Version price and at least one size.";
+        errEl.style.display = "block";
+      }
+      return;
+    }
+
+    const versions = {
+      fan: { label: "Fan Version", price: fanPrice, sizes: fanSizes },
+      player: { label: "Player Version", price: playerPrice, sizes: playerSizes }
+    };
+
+    price = fanPrice;
+    sizes = Array.from(new Set([...fanSizes, ...playerSizes]));
+    description = (typeof formatProductDescription === "function")
+      ? formatProductDescription(rawDesc, versions)
+      : rawDesc;
+  } else {
+    const priceRaw = document.getElementById("edit-prod-price")?.value.trim();
+    const hasSizes = document.getElementById("edit-prod-has-sizes")?.checked ?? true;
+    const sizesRaw = document.getElementById("edit-prod-sizes")?.value.trim() || "";
+
+    if (!name || !category || !priceRaw || (hasSizes && !sizesRaw) || !rawDesc) {
+      if (errEl) {
+        errEl.textContent = "Please fill in all required fields (Name, Price, Sizes, Description).";
+        errEl.style.display = "block";
+      }
+      return;
+    }
+
+    price = parseInt(String(priceRaw).replace(/[^0-9]/g, ""), 10);
+    if (isNaN(price) || price < 1) {
+      if (errEl) {
+        errEl.textContent = "Please enter a valid price.";
+        errEl.style.display = "block";
+      }
+      return;
+    }
+    sizes = hasSizes ? sizesRaw.split(",").map(s => s.trim()).filter(Boolean) : [];
+    description = (typeof cleanProductDescription === "function")
+      ? cleanProductDescription(rawDesc)
+      : rawDesc;
+  }
+
+  const saveBtn = document.getElementById("edit-save-btn");
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving changes…";
+  }
+
+  try {
+    let finalImageUrl = _currentEditingProduct.image || _currentEditingProduct.image_url;
+
+    // If replacement image was selected, upload it first
+    if (_editReplacementFile) {
+      if (saveBtn) saveBtn.textContent = "Uploading replacement image…";
+      try {
+        finalImageUrl = await uploadProductImage(_editReplacementFile, _adminSession);
+      } catch (uploadErr) {
+        throw new Error(`Image upload failed: ${uploadErr.message}. The product was not saved.`);
+      }
+    }
+
+    if (saveBtn) saveBtn.textContent = "Updating database…";
+
+    const updatePayload = {
+      product_name: name,
+      category,
+      price,
+      sizes,
+      image_url: finalImageUrl,
+      description,
+      badge,
+      featured,
+      in_stock: inStock
+    };
+
+    const updated = await updateProduct(_currentEditingProduct.id, updatePayload, _adminSession);
+
+    closeEditProductModal();
+    showMsg(`✅ Product "${updated.name || name}" updated successfully!`, "success");
+
+    await loadAdminProductList();
+    if (typeof loadDashboard === "function") loadDashboard();
+
+  } catch (err) {
+    if (errEl) {
+      errEl.textContent = `❌ ${err.message}`;
+      errEl.style.display = "block";
+    } else {
+      showMsg(`❌ ${err.message}`, "error");
+    }
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "💾 Save Changes";
+    }
   }
 }
 
@@ -1257,6 +1637,22 @@ if (typeof module !== "undefined" && module.exports) {
     renderAdminOrdersList,
     handleAdminLogin,
     handleLogout,
-    setAdminSessionForTest: (s) => { _adminSession = s; }
+    loadAdminProductList,
+    openEditProductModal,
+    closeEditProductModal,
+    handleAdminEditProductModalBackdrop,
+    handleEditCategoryChange,
+    handleEditVersionsToggle,
+    handleEditHasSizesToggle,
+    handleEditImageSelect,
+    cancelEditImageReplacement,
+    handleSaveEditProduct,
+    setAdminSessionForTest: (s) => { _adminSession = s; },
+    setAdminProductsCacheForTest: (p) => { _adminProductsCache = p; },
+    getAdminProductsCacheForTest: () => _adminProductsCache,
+    getCurrentEditingProductForTest: () => _currentEditingProduct,
+    setCurrentEditingProductForTest: (p) => { _currentEditingProduct = p; },
+    setEditReplacementFileForTest: (f) => { _editReplacementFile = f; },
+    getEditReplacementFileForTest: () => _editReplacementFile,
   };
 }

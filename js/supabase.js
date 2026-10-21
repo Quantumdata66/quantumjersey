@@ -18,10 +18,36 @@ const _isQJPreview = typeof window !== "undefined" && (
    window.location.hostname !== "quantumjersey.vercel.app")
 );
 
-const SUPABASE_URL = window.QJ_SUPABASE_URL ||
-  (_isQJPreview ? "YOUR_PREVIEW_CONFIG_FAILED" : "https://pbuntpobwsaddoexpmej.supabase.co");
-const SUPABASE_ANON_KEY = window.QJ_SUPABASE_ANON_KEY ||
-  (_isQJPreview ? "DISABLED" : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBidW50cG9id3NhZGRvZXhwbWVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzAxNTksImV4cCI6MjA5NzcwNjE1OX0.DfqwSTlLtGBrmM-AgwqE1yXRLklmefuJo9TtHxMI5hI");
+const _isQJLocal = typeof window !== "undefined" && (
+  window.QJ_ENV === "development" ||
+  (window.location &&
+   typeof window.location.hostname === "string" &&
+   (window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "[::1]" ||
+    window.location.hostname === "::1" ||
+    window.location.hostname.endsWith(".localhost")))
+);
+
+const _hasValidInjectedUrl = typeof window !== "undefined" &&
+  typeof window.QJ_SUPABASE_URL === "string" &&
+  window.QJ_SUPABASE_URL.trim() !== "" &&
+  !window.QJ_SUPABASE_URL.startsWith("YOUR_") &&
+  (window.QJ_SUPABASE_URL.startsWith("http://") || window.QJ_SUPABASE_URL.startsWith("https://"));
+
+const SUPABASE_URL = _hasValidInjectedUrl
+  ? window.QJ_SUPABASE_URL.trim()
+  : (_isQJPreview
+      ? "YOUR_PREVIEW_CONFIG_FAILED"
+      : (_isQJLocal
+          ? "YOUR_LOCAL_CONFIG_FAILED"
+          : (window.QJ_SUPABASE_URL || "https://pbuntpobwsaddoexpmej.supabase.co")));
+
+const SUPABASE_ANON_KEY = (typeof window !== "undefined" && typeof window.QJ_SUPABASE_ANON_KEY === "string" && window.QJ_SUPABASE_ANON_KEY.trim() && !window.QJ_SUPABASE_ANON_KEY.startsWith("YOUR_") && window.QJ_SUPABASE_ANON_KEY !== "DISABLED")
+  ? window.QJ_SUPABASE_ANON_KEY.trim()
+  : ((_isQJPreview || _isQJLocal)
+      ? "DISABLED"
+      : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBidW50cG9id3NhZGRvZXhwbWVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzAxNTksImV4cCI6MjA5NzcwNjE1OX0.DfqwSTlLtGBrmM-AgwqE1yXRLklmefuJo9TtHxMI5hI");
 const STORAGE_BUCKET = "product-images";
 const PAGE_SIZE = 24; // Products per page — scalable for 500+
 
@@ -306,6 +332,63 @@ async function toggleFeatured(id, featured, session) {
   if (!client || !session) throw new Error("Not authenticated.");
   const { error } = await client.from("products").update({ featured }).eq("id", id);
   if (error) throw new Error(`Update failed: ${error.message}`);
+}
+
+/**
+ * Update an existing product in the database by ID (requires auth session).
+ */
+async function updateProduct(id, productData, session = null) {
+  if (!id) throw new Error("Product ID is required for update.");
+  const client = getSupabaseClient();
+  if (client && !session && typeof getAdminSession === "function") {
+    session = await getAdminSession();
+  }
+  if (!client || !session) throw new Error("Not authenticated.");
+
+  const updatePayload = {};
+  if (typeof productData.product_name === "string" && productData.product_name.trim()) {
+    updatePayload.product_name = productData.product_name.trim();
+  }
+  if (typeof productData.category === "string" && productData.category.trim()) {
+    updatePayload.category = productData.category.trim();
+  }
+  if (typeof productData.price === "number" && !isNaN(productData.price)) {
+    updatePayload.price = productData.price;
+  }
+  if (Array.isArray(productData.sizes)) {
+    updatePayload.sizes = productData.sizes;
+  }
+  if (typeof productData.image_url === "string" && productData.image_url.trim()) {
+    updatePayload.image_url = productData.image_url.trim();
+  }
+  if (typeof productData.description === "string") {
+    updatePayload.description = productData.description;
+  }
+  if ("badge" in productData) {
+    updatePayload.badge = productData.badge ? productData.badge.trim() : null;
+  }
+  if ("featured" in productData) {
+    updatePayload.featured = Boolean(productData.featured);
+  }
+  if ("in_stock" in productData) {
+    updatePayload.in_stock = Boolean(productData.in_stock);
+  }
+
+  const { data, error } = await client
+    .from("products")
+    .update(updatePayload)
+    .eq("id", id)
+    .select();
+
+  if (error) throw new Error(`Update failed: ${error.message}`);
+  const updatedRow = (Array.isArray(data) && data.length > 0)
+    ? data[0]
+    : ((data && !Array.isArray(data) && typeof data === "object") ? data : null);
+
+  if (!updatedRow) {
+    throw new Error("Update failed: product not found or unauthorized.");
+  }
+  return normaliseProduct(updatedRow);
 }
 
 // ─── Gemini AI Vision ─────────────────────────────────────────
@@ -797,6 +880,10 @@ if (typeof module !== "undefined" && module.exports) {
     getSupabaseClient,
     submitReview,
     fetchProductReviews,
+    updateProduct,
+    publishProduct,
+    deleteProductById,
+    normaliseProduct,
   };
 }
 

@@ -421,11 +421,28 @@ async function runStage5iTestSuite() {
     assert.ok(prodClient !== null, 'Production client should initialize on production host');
     assert.strictEqual(prodCtx.getCreatedClient().url, APPROVED_PRODUCTION_SUPABASE_URL);
 
-    // 2. Local development host (localhost): retains normal development defaults
-    const localCtx = createBrowserContext('localhost', {});
-    assert.strictEqual(localCtx.exports.getSUPABASE_URL(), APPROVED_PRODUCTION_SUPABASE_URL);
-    const localClient = localCtx.exports.getSupabaseClient();
-    assert.ok(localClient !== null, 'Localhost should initialize normal default client');
+    // 2. Local development host (localhost): fails closed when unconfigured
+    const localUnconfiguredCtx = createBrowserContext('localhost', {});
+    assert.ok(localUnconfiguredCtx.exports.getSUPABASE_URL().startsWith('YOUR_'), 'Localhost without config must fail closed');
+    assert.strictEqual(localUnconfiguredCtx.exports.getSupabaseClient(), null, 'Localhost without config must not initialize Supabase');
+    assert.strictEqual(localUnconfiguredCtx.getCreatedClient(), null, 'Localhost without config must never connect to production');
+
+    // 2b. Local development host (localhost): fails closed when invalid fallback string is present
+    const localInvalidCtx = createBrowserContext('localhost', { QJ_SUPABASE_URL: 'YOUR_STATIC_FALLBACK' });
+    assert.ok(localInvalidCtx.exports.getSUPABASE_URL().startsWith('YOUR_'), 'Localhost with fallback placeholder must fail closed');
+    assert.strictEqual(localInvalidCtx.exports.getSupabaseClient(), null, 'Localhost with invalid config must not initialize Supabase');
+    assert.strictEqual(localInvalidCtx.getCreatedClient(), null, 'Localhost with invalid config must never connect to production');
+
+    // 2c. Local development host (localhost): initializes when explicitly configured
+    const localConfiguredCtx = createBrowserContext('localhost', {
+      QJ_ENV: 'development',
+      QJ_SUPABASE_URL: mockSandboxUrl,
+      QJ_SUPABASE_ANON_KEY: mockSandboxAnonKey
+    });
+    assert.strictEqual(localConfiguredCtx.exports.getSUPABASE_URL(), mockSandboxUrl);
+    const localClient = localConfiguredCtx.exports.getSupabaseClient();
+    assert.ok(localClient !== null, 'Localhost with config should initialize client');
+    assert.strictEqual(localConfiguredCtx.getCreatedClient().url, mockSandboxUrl);
 
     // 3. Successful Preview config: correctly overrides with sandbox URL
     const previewSuccessCtx = createBrowserContext('quantumjersey-preview.vercel.app', {
@@ -438,7 +455,7 @@ async function runStage5iTestSuite() {
     assert.ok(previewClient !== null, 'Preview client initializes with sandbox config');
     assert.strictEqual(previewSuccessCtx.getCreatedClient().url, mockSandboxUrl);
 
-    reportPass(12, 'Host-based preservation: Production and Localhost initialize normally while Preview is strictly isolated');
+    reportPass(12, 'Host-based preservation: Production retains defaults, Localhost fails closed unless configured, and Preview is strictly isolated');
   } catch (err) {
     reportFail(12, 'Host-based preservation test failed', err);
   }
