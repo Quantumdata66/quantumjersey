@@ -650,9 +650,12 @@ async function submitReview({
   }
 
   try {
+    // Strictly minimal insert: do NOT chain .select() or request row representation.
+    // Under PostgreSQL RLS, pending review rows are not selectable by public users until approved,
+    // so requesting representation (RETURNING *) would violate the SELECT policy with code 42501.
     const { error } = await client
       .from("reviews")
-      .insert([payload]);
+      .insert([payload], { defaultToNull: false });
 
     if (error) {
       if (error.code === "23505") {
@@ -660,6 +663,9 @@ async function submitReview({
       }
       if (error.code === "23502" && error.message && error.message.includes("product_id")) {
         throw new Error("Database schema update pending: product_id nullability migration required.");
+      }
+      if (error.code === "42501") {
+        throw new Error("Review submission could not be accepted due to security policy restrictions. Please try again or contact support if the issue persists.");
       }
       throw error;
     }

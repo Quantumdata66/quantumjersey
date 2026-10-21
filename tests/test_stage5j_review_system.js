@@ -316,6 +316,212 @@ async function runStage5jTestSuite() {
     reportFail(11, 'review.html UI structure validation failed', err);
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // 12. Minimal insert enforcement: no .select(), no return=representation, and revised 42501 error guidance
+  // ─────────────────────────────────────────────────────────────
+  try {
+    let insertCalls = [];
+    let selectChained = false;
+    let lastBuilder = null;
+
+    // Factory for instrumented PostgREST builder simulating PostgREST protocol behavior
+    function createMockPostgrestBuilder(payloads, options) {
+      const headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      };
+      if (options && options.defaultToNull === false) {
+        headers['Prefer'] = 'missing=default';
+      }
+
+      const searchParams = new Map();
+
+      const builder = {
+        headers,
+        searchParams,
+        method: 'POST',
+        payloads,
+        options,
+        select: (columns = '*') => {
+          selectChained = true;
+          searchParams.set('select', columns);
+          if (headers['Prefer']) {
+            headers['Prefer'] += ',return=representation';
+          } else {
+            headers['Prefer'] = 'return=representation';
+          }
+          return builder;
+        },
+        then: (resolve) => {
+          // If return=representation is requested on an unapproved review,
+          // simulate PostgreSQL RLS SELECT check failure (code 42501)
+          if (headers['Prefer'] && headers['Prefer'].includes('return=representation')) {
+            resolve({
+              data: null,
+              error: {
+                code: '42501',
+                message: 'new row violates row-level security policy for table "reviews"'
+              }
+            });
+            return;
+          }
+
+          // In minimal return mode (PostgREST default when return=representation is absent),
+          // PostgREST returns 201 Created with empty representation (data: null)
+          resolve({ data: null, error: null });
+        }
+      };
+
+      lastBuilder = builder;
+      return builder;
+    }
+
+    const mockSupabaseClient = {
+      from: (tableName) => {
+        assert.strictEqual(tableName, 'reviews', 'Must target reviews table');
+        return {
+          insert: (payloads, options) => {
+            insertCalls.push({ payloads, options });
+            return createMockPostgrestBuilder(payloads, options);
+          }
+        };
+      }
+    };
+
+    // Temporarily attach mock client to global getter
+    const originalGetSupabaseClient = global.getSupabaseClient;
+    global.getSupabaseClient = () => mockSupabaseClient;
+
+    // A. Catalogue product submission
+    insertCalls = [];
+    selectChained = false;
+    lastBuilder = null;
+    const catRes = await submitReview({
+      productId: 'jrz-002',
+      productName: 'Real Madrid 2024/25 Home Jersey',
+      rating: 5,
+      reviewText: 'Great jersey, looks fantastic on pitch.',
+      customerName: 'Tunde A.',
+      reviewSource: 'previous_customer'
+    });
+
+    assert.strictEqual(insertCalls.length, 1, 'Exactly one insert called for catalogue product');
+    assert.strictEqual(selectChained, false, 'Catalogue insert must NEVER chain .select() (minimal return required by RLS)');
+    assert.ok(lastBuilder, 'PostgREST builder must be created');
+    assert.strictEqual(lastBuilder.searchParams.has('select'), false, 'URL query must NOT contain select parameter');
+    assert.strictEqual(
+      (lastBuilder.headers['Prefer'] || '').includes('return=representation'),
+      false,
+      'Headers must NOT request return=representation (which triggers RLS SELECT policy check)'
+    );
+
+    const catPayload = insertCalls[0].payloads[0];
+    assert.strictEqual(catPayload.product_id, 'jrz-002', 'Catalogue product_id preserved');
+    assert.strictEqual(catPayload.product_name, 'Real Madrid 2024/25 Home Jersey', 'Catalogue product_name preserved');
+    assert.strictEqual(catPayload.status, 'pending', 'Submitted status must strictly be pending');
+    assert.strictEqual(catPayload.is_verified_purchase, false, 'Submitted is_verified_purchase must strictly be false');
+    assert.strictEqual(catRes.success, true);
+    assert.strictEqual(catRes.data.status, 'pending');
+    assert.strictEqual(catRes.data.is_verified_purchase, false);
+
+    // B. Free-text unlisted product submission
+    insertCalls = [];
+    selectChained = false;
+    lastBuilder = null;
+    const unlistedRes = await submitReview({
+      productId: null,
+      productName: 'Custom Nigeria 1996 Olympic Gold Retro Jersey',
+      rating: 5,
+      reviewText: 'Historic jersey quality is superb and authentic.',
+      customerName: 'Kanu N.',
+      reviewSource: 'previous_customer'
+    });
+
+    assert.strictEqual(insertCalls.length, 1, 'Exactly one insert called for unlisted product');
+    assert.strictEqual(selectChained, false, 'Unlisted insert must NEVER chain .select() (minimal return required by RLS)');
+    assert.ok(lastBuilder, 'PostgREST builder must be created');
+    assert.strictEqual(lastBuilder.searchParams.has('select'), false, 'URL query must NOT contain select parameter');
+    assert.strictEqual(
+      (lastBuilder.headers['Prefer'] || '').includes('return=representation'),
+      false,
+      'Headers must NOT request return=representation (which triggers RLS SELECT policy check)'
+    );
+
+    const unlistedPayload = insertCalls[0].payloads[0];
+    assert.strictEqual(unlistedPayload.product_id, null, 'Unlisted product_id must be null');
+    assert.strictEqual(unlistedPayload.product_name, 'Custom Nigeria 1996 Olympic Gold Retro Jersey', 'Unlisted product_name preserved');
+    assert.strictEqual(unlistedPayload.status, 'pending', 'Submitted status must strictly be pending');
+    assert.strictEqual(unlistedPayload.is_verified_purchase, false, 'Submitted is_verified_purchase must strictly be false');
+    assert.strictEqual(unlistedRes.success, true);
+    assert.strictEqual(unlistedRes.data.status, 'pending');
+    assert.strictEqual(unlistedRes.data.is_verified_purchase, false);
+
+    // C. Error guidance verification for 42501 (insufficient privilege / RLS rejection)
+    const errorSimulatingClient = {
+      from: () => ({
+        insert: () => ({
+          then: (resolve) => {
+            resolve({
+              data: null,
+              error: {
+                code: '42501',
+                message: 'new row violates row-level security policy for table "reviews"'
+              }
+            });
+          }
+        })
+      })
+    };
+    global.getSupabaseClient = () => errorSimulatingClient;
+
+    let caughtError = null;
+    try {
+      await submitReview({
+        productId: null,
+        productName: 'Test Error Handling Jersey',
+        rating: 5,
+        reviewText: 'Testing 42501 user-facing message guidance.',
+        customerName: 'Tester',
+        reviewSource: 'previous_customer'
+      });
+    } catch (err) {
+      caughtError = err;
+    }
+
+    assert.ok(caughtError, 'Expected submitReview to reject on 42501 error');
+    assert.strictEqual(
+      caughtError.message,
+      'Review submission could not be accepted due to security policy restrictions. Please try again or contact support if the issue persists.',
+      '42501 error must give helpful guidance without incorrectly blaming customer form fields'
+    );
+
+    // Restore original getter
+    global.getSupabaseClient = originalGetSupabaseClient;
+
+    reportPass(12, 'Minimal insert verified: return=representation absent, no .select(), pending/unverified state preserved, and accurate 42501 guidance');
+  } catch (err) {
+    reportFail(12, 'Minimal insert enforcement test failed', err);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 13. Cache-busting version parameter on review script tags
+  // ─────────────────────────────────────────────────────────────
+  try {
+    const reviewHtmlContent = fs.readFileSync(reviewHtmlPath, 'utf8');
+    const productHtmlPath = path.join(ROOT_DIR, 'product.html');
+    const productHtmlContent = fs.readFileSync(productHtmlPath, 'utf8');
+
+    const reviewScriptMatch = reviewHtmlContent.match(/<script src="js\/supabase\.js\?v=([a-zA-Z0-9_-]+)"><\/script>/);
+    assert.ok(reviewScriptMatch, 'review.html must include cache-busted js/supabase.js?v=...');
+
+    const productScriptMatch = productHtmlContent.match(/<script src="js\/supabase\.js\?v=([a-zA-Z0-9_-]+)"><\/script>/);
+    assert.ok(productScriptMatch, 'product.html must include cache-busted js/supabase.js?v=...');
+
+    reportPass(13, 'review.html and product.html include cache-busted js/supabase.js script tags');
+  } catch (err) {
+    reportFail(13, 'Cache-busting script tag verification failed', err);
+  }
+
   console.log('\n================================================================');
   console.log(`STAGE 5J TEST RESULTS: ${passed} / ${passed + failed} PASSED (${Math.round((passed / (passed + failed)) * 100)}%)`);
   console.log('================================================================\n');
