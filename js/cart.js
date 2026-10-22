@@ -243,6 +243,25 @@ function calculateDelivery(stateName, subtotal) {
 }
 
 /**
+ * Calculates authoritative cart totals: Items Subtotal, Delivery Fee, and Total.
+ * Standard nationwide delivery is ₦5,000 once per non-empty order; ₦0 for an empty cart.
+ */
+function getCartTotals() {
+  const items = getCartItems();
+  const subtotal = getCartSubtotal();
+  const validSubtotal = Number.isFinite(subtotal) && subtotal >= 0 ? Math.round(subtotal) : 0;
+  const deliveryFee = items.length > 0 ? STANDARD_DELIVERY_FEE : 0;
+  const total = items.length > 0 ? validSubtotal + deliveryFee : 0;
+  return {
+    itemCount: getCartTotalCount(),
+    subtotal: validSubtotal,
+    deliveryFee: deliveryFee,
+    total: total,
+    isEmpty: items.length === 0
+  };
+}
+
+/**
  * Refreshes all cart items against the latest product registry.
  */
 function syncCartWithRegistry() {
@@ -284,10 +303,14 @@ function syncCartWithRegistry() {
  * Broadcasts a custom event for any UI component to re-render.
  */
 function dispatchCartUpdated() {
+  const totals = getCartTotals();
   const event = new CustomEvent("qj:cart-updated", {
     detail: {
-      count: getCartTotalCount(),
-      subtotal: getCartSubtotal(),
+      count: totals.itemCount,
+      subtotal: totals.subtotal,
+      deliveryFee: totals.deliveryFee,
+      total: totals.total,
+      totals: totals,
       items: getCartItems(),
     }
   });
@@ -314,6 +337,7 @@ if (typeof module !== "undefined" && module.exports) {
     clearCart,
     getCartTotalCount,
     getCartSubtotal,
+    getCartTotals,
     calculateDelivery,
     syncCartWithRegistry,
     dispatchCartUpdated,
