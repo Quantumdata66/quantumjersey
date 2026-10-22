@@ -266,12 +266,23 @@ async function fetchProductsPaginated({ category = null, featuredOnly = false, s
     };
   } catch (err) {
     console.error("[QJ] Supabase fetch error:", err.message);
-    const fallback = DEFAULT_PRODUCTS.slice(page * pageSize, (page + 1) * pageSize);
-    if (typeof registerProducts === "function") registerProducts(fallback);
+    let filteredFallback = (typeof DEFAULT_PRODUCTS !== "undefined" && Array.isArray(DEFAULT_PRODUCTS))
+      ? [...DEFAULT_PRODUCTS]
+      : [];
+    if (category) filteredFallback = filteredFallback.filter(p => p.category === category);
+    if (featuredOnly) filteredFallback = filteredFallback.filter(p => p.featured);
+    if (search) {
+      const q = search.toLowerCase();
+      filteredFallback = filteredFallback.filter(p => (p.name || "").toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q));
+    }
+    const totalCount = filteredFallback.length;
+    const from = page * pageSize;
+    const pageProducts = filteredFallback.slice(from, from + pageSize);
+    if (typeof registerProducts === "function") registerProducts(pageProducts);
     return {
-      products: fallback,
-      totalCount: DEFAULT_PRODUCTS.length,
-      hasMore: (page + 1) * pageSize < DEFAULT_PRODUCTS.length,
+      products: pageProducts,
+      totalCount,
+      hasMore: from + pageSize < totalCount,
       page,
     };
   }

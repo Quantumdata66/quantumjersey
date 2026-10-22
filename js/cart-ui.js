@@ -18,10 +18,13 @@ function injectCartUIElements() {
 
   const html = `
     <!-- Cart Overlay Backdrop -->
-    <div id="qj-cart-backdrop" class="cart-backdrop" onclick="closeCartDrawer()"></div>
+    <div id="qj-cart-backdrop" class="cart-backdrop" onclick="closeCartDrawer()" aria-hidden="true"></div>
 
     <!-- Slide-out Cart Drawer -->
-    <aside id="qj-cart-drawer" class="cart-drawer" aria-label="Shopping Cart">
+    <aside id="qj-cart-drawer" class="cart-drawer" role="dialog" aria-modal="true" aria-label="Shopping Cart" aria-hidden="true" tabindex="-1" onclick="event.stopPropagation()">
+      <!-- Screen reader polite announcement live region -->
+      <div id="cart-live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
       <!-- Drawer Header -->
       <div class="cart-header">
         <div class="cart-header-title">
@@ -31,34 +34,60 @@ function injectCartUIElements() {
           <h3>Shopping Cart</h3>
           <span id="cart-drawer-badge" class="cart-drawer-badge">0</span>
         </div>
-        <button class="cart-close-btn" onclick="closeCartDrawer()" aria-label="Close cart">✕</button>
+        <button class="cart-close-btn" onclick="closeCartDrawer()" aria-label="Close cart" title="Close cart">✕</button>
       </div>
 
-      <!-- Standard Nationwide Delivery Banner -->
-      <div id="cart-delivery-banner" class="cart-delivery-banner">
-        <div class="cart-delivery-text">
-          <span>🚚 <strong>Nationwide Delivery: ₦5,000</strong> per order</span>
-          <span class="cart-delivery-subnote">Remote location courier waybill surcharges confirmed via WhatsApp</span>
+      <!-- Floating Delivery Notice (temporary overlay on drawer open) -->
+      <div id="cart-delivery-notice" class="cart-delivery-notice" role="status" aria-live="polite" aria-label="Delivery Information" style="display:none;" aria-hidden="true">
+        <div class="delivery-notice-inner">
+          <div class="delivery-notice-header">
+            <span class="delivery-notice-title">🚚 Delivery Information</span>
+            <button type="button" class="delivery-notice-dismiss" onclick="dismissCartDeliveryNotice(true)" aria-label="Dismiss delivery notice" title="Dismiss delivery notice">✕</button>
+          </div>
+          <ul class="delivery-notice-bullets">
+            <li>Nationwide delivery: <strong>₦5,000</strong> per order.</li>
+            <li>Remote locations: courier waybill surcharges are confirmed via WhatsApp.</li>
+          </ul>
         </div>
       </div>
+      <!-- Hidden hook to maintain backwards-compatibility with legacy queries for #cart-delivery-banner -->
+      <div id="cart-delivery-banner" style="display:none;" aria-hidden="true"></div>
 
       <!-- Cart Items Scrollable Container -->
       <div id="cart-items-container" class="cart-items-container">
         <!-- Rendered dynamically -->
       </div>
 
-      <!-- Cart Footer / Subtotal / Checkout CTA -->
+      <!-- Cart Footer / Subtotal, Delivery Fee, Total / Checkout CTA -->
       <div id="cart-footer" class="cart-footer">
-        <div class="cart-subtotal-row">
-          <span class="cart-subtotal-label">Subtotal</span>
-          <span id="cart-subtotal-amount" class="cart-subtotal-amount">₦0</span>
+        <div class="cart-totals-breakdown">
+          <div class="cart-summary-row">
+            <span class="cart-summary-label">Items Subtotal</span>
+            <span id="cart-items-subtotal" class="cart-summary-amount">₦0</span>
+          </div>
+          <div class="cart-summary-row cart-delivery-row">
+            <div class="cart-delivery-label-wrap">
+              <span class="cart-summary-label">Delivery Fee</span>
+              <span class="cart-delivery-pill">Nationwide courier dispatch</span>
+            </div>
+            <span id="cart-delivery-fee" class="cart-summary-amount">₦5,000</span>
+          </div>
+          <div class="cart-summary-row cart-total-row">
+            <span class="cart-total-label">Total</span>
+            <span id="cart-total-amount" class="cart-total-amount">₦0</span>
+          </div>
         </div>
-        <p class="cart-tax-notice">Estimated delivery & final details confirmed via WhatsApp</p>
+        <!-- Hidden hook to maintain compatibility with legacy tests expecting #cart-subtotal-amount -->
+        <span id="cart-subtotal-amount" style="display:none;">₦0</span>
+
         <button id="btn-proceed-checkout" class="btn-primary btn-checkout-action" onclick="openCheckoutModal()">
           <span>Proceed to Checkout</span>
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
           </svg>
+        </button>
+        <button id="btn-continue-shopping" class="btn-secondary btn-continue-shopping" onclick="closeCartDrawer()">
+          ← Continue Shopping
         </button>
         <button class="btn-clear-cart" onclick="handleClearCartPrompt()">Clear Cart</button>
       </div>
@@ -316,21 +345,173 @@ function syncHeaderCartButtons() {
 
 // ─── Drawer Render & UI Updates ──────────────────────────────
 
+let isDrawerHistoryPushed = false;
+let isClosingFromPopstate = false;
+let lastFocusedElementBeforeDrawer = null;
+let isScrollLocked = false;
+let savedBodyOverflow = "";
+let savedHtmlOverflow = "";
+let lastAnnouncedCartText = "";
+let deliveryNoticeTimer = null;
+let isDeliveryNoticeManuallyDismissed = false;
+
+function showCartDeliveryNotice() {
+  if (typeof document === "undefined") return;
+  if (isDeliveryNoticeManuallyDismissed) return;
+
+  const notice = document.getElementById("cart-delivery-notice");
+  if (!notice) return;
+
+  if (deliveryNoticeTimer) {
+    clearTimeout(deliveryNoticeTimer);
+    deliveryNoticeTimer = null;
+  }
+
+  notice.style.display = "block";
+  notice.setAttribute("aria-hidden", "false");
+  const dismissBtn = notice.querySelector(".delivery-notice-dismiss");
+  if (dismissBtn) {
+    dismissBtn.removeAttribute("aria-hidden");
+  }
+
+  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => {
+      notice.classList.add("show");
+    });
+  } else {
+    notice.classList.add("show");
+  }
+
+  // Automatically dismiss after ~4.5 seconds
+  deliveryNoticeTimer = setTimeout(() => {
+    dismissCartDeliveryNotice(false);
+  }, 4500);
+}
+
+function dismissCartDeliveryNotice(manual = false) {
+  if (deliveryNoticeTimer) {
+    clearTimeout(deliveryNoticeTimer);
+    deliveryNoticeTimer = null;
+  }
+  const notice = document.getElementById("cart-delivery-notice");
+  if (notice) {
+    notice.classList.remove("show");
+    notice.style.display = "none";
+    notice.setAttribute("aria-hidden", "true");
+    const dismissBtn = notice.querySelector(".delivery-notice-dismiss");
+    if (dismissBtn) {
+      if (typeof document !== "undefined" && document.activeElement === dismissBtn) {
+        const drawerClose = document.querySelector("#qj-cart-drawer .cart-close-btn");
+        if (drawerClose && typeof drawerClose.focus === "function") {
+          drawerClose.focus();
+        }
+      }
+      dismissBtn.setAttribute("aria-hidden", "true");
+    }
+  }
+  if (manual) {
+    isDeliveryNoticeManuallyDismissed = true;
+  }
+}
+
+function lockBodyScroll() {
+  if (typeof document === "undefined") return;
+  if (!isScrollLocked) {
+    if (document.body && document.body.style) {
+      savedBodyOverflow = document.body.style.overflow || "";
+    }
+    if (document.documentElement && document.documentElement.style) {
+      savedHtmlOverflow = document.documentElement.style.overflow || "";
+    }
+    isScrollLocked = true;
+  }
+  if (document.body && document.body.style) {
+    document.body.style.overflow = "hidden";
+  }
+  if (document.documentElement && document.documentElement.style) {
+    document.documentElement.style.overflow = "hidden";
+  }
+}
+
+function isAnyOverlayActive() {
+  if (typeof document === "undefined") return false;
+  const drawer = document.getElementById("qj-cart-drawer");
+  const isDrawerOpen = Boolean(drawer && drawer.classList && drawer.classList.contains("open"));
+
+  const checkoutModal = document.getElementById("qj-checkout-modal");
+  const isCheckoutOpen = Boolean(checkoutModal && checkoutModal.style && checkoutModal.style.display && checkoutModal.style.display !== "none");
+
+  const statusModal = document.getElementById("qj-payment-status-modal");
+  const isStatusOpen = Boolean(statusModal && statusModal.style && statusModal.style.display && statusModal.style.display !== "none");
+
+  const successModal = document.getElementById("qj-success-modal");
+  const isSuccessOpen = Boolean(successModal && successModal.style && successModal.style.display && successModal.style.display !== "none");
+
+  return isDrawerOpen || isCheckoutOpen || isStatusOpen || isSuccessOpen;
+}
+
+function restoreBodyScroll(force = false) {
+  if (typeof document === "undefined") return;
+  if (!force && isAnyOverlayActive()) {
+    return;
+  }
+  if (isScrollLocked) {
+    if (document.body && document.body.style) {
+      document.body.style.overflow = savedBodyOverflow;
+    }
+    if (document.documentElement && document.documentElement.style) {
+      document.documentElement.style.overflow = savedHtmlOverflow;
+    }
+    savedBodyOverflow = "";
+    savedHtmlOverflow = "";
+    isScrollLocked = false;
+  }
+}
+
+function announceCartTotals(text) {
+  if (typeof document === "undefined") return;
+  const liveEl = document.getElementById("cart-live-region");
+  if (!liveEl || !text) return;
+  if (text === lastAnnouncedCartText && liveEl.textContent === text) return;
+  lastAnnouncedCartText = text;
+  liveEl.textContent = text;
+}
+
 function renderCartDrawer() {
   const container = document.getElementById("cart-items-container");
   const footer = document.getElementById("cart-footer");
-  const promoFill = document.getElementById("cart-promo-fill");
-  const promoText = document.getElementById("cart-promo-text");
-  const subtotalEl = document.getElementById("cart-subtotal-amount");
+  const subtotalLegacyEl = document.getElementById("cart-subtotal-amount");
+  const itemsSubtotalEl = document.getElementById("cart-items-subtotal");
+  const deliveryFeeEl = document.getElementById("cart-delivery-fee");
+  const totalAmountEl = document.getElementById("cart-total-amount");
 
   if (!container) return;
 
   const items = typeof getCartItems === "function" ? getCartItems() : [];
-  const subtotal = typeof getCartSubtotal === "function" ? getCartSubtotal() : 0;
+  const totals = (typeof getCartTotals === "function")
+    ? getCartTotals()
+    : {
+        itemCount: typeof getCartTotalCount === "function" ? getCartTotalCount() : 0,
+        subtotal: typeof getCartSubtotal === "function" ? getCartSubtotal() : 0,
+        deliveryFee: items.length > 0 ? (typeof STANDARD_DELIVERY_FEE !== "undefined" ? STANDARD_DELIVERY_FEE : 5000) : 0,
+        total: 0,
+        isEmpty: items.length === 0
+      };
 
-  if (subtotalEl) {
-    subtotalEl.textContent = formatPrice(subtotal);
+  if (!totals.total && items.length > 0) {
+    totals.total = totals.subtotal + totals.deliveryFee;
   }
+
+  // Authoritative finite checks: prevent NaN, null, or negative amounts
+  const safeSubtotal = Number.isFinite(totals.subtotal) && totals.subtotal >= 0 ? Math.round(totals.subtotal) : 0;
+  const safeDelivery = items.length > 0 && Number.isFinite(totals.deliveryFee) && totals.deliveryFee >= 0 ? Math.round(totals.deliveryFee) : 0;
+  const safeTotal = items.length > 0 && Number.isFinite(totals.total) && totals.total >= 0 ? Math.round(totals.total) : 0;
+
+  // Always update summary amounts for tests and UI state
+  if (itemsSubtotalEl) itemsSubtotalEl.textContent = formatPriceSafe(safeSubtotal);
+  if (subtotalLegacyEl) subtotalLegacyEl.textContent = formatPriceSafe(safeSubtotal);
+  if (deliveryFeeEl) deliveryFeeEl.textContent = formatPriceSafe(safeDelivery);
+  if (totalAmountEl) totalAmountEl.textContent = formatPriceSafe(safeTotal);
 
   if (items.length === 0) {
     container.innerHTML = `
@@ -338,46 +519,53 @@ function renderCartDrawer() {
         <div class="empty-cart-icon">🛍️</div>
         <h4>Your cart is empty</h4>
         <p>Explore our premium collection of boots, jerseys, and sportswear.</p>
-        <a href="catalog.html" class="btn-primary" onclick="closeCartDrawer()" style="padding:12px 28px;margin-top:12px;">
-          Explore Products →
-        </a>
+        <button class="btn-primary" onclick="closeCartDrawer()" style="padding:12px 28px;margin-top:12px;">
+          ← Continue Shopping
+        </button>
       </div>
     `;
     if (footer) footer.style.display = "none";
+    announceCartTotals("Shopping cart is empty. Subtotal ₦0, Delivery ₦0, Total ₦0.");
     return;
   }
 
   if (footer) footer.style.display = "block";
+  announceCartTotals(`Shopping cart updated: ${totals.itemCount} item${totals.itemCount === 1 ? "" : "s"}. Subtotal ${formatPriceSafe(safeSubtotal)}, Delivery ₦5,000, Total ${formatPriceSafe(safeTotal)}.`);
 
   container.innerHTML = items.map(item => {
-    const lineSubtotal = (item.price || 0) * (item.quantity || 1);
+    const rawPrice = Number(item.price);
+    const safeItemPrice = Number.isFinite(rawPrice) && rawPrice >= 0 ? Math.round(rawPrice) : 0;
+    const rawQty = parseInt(item.quantity, 10);
+    const safeQty = Number.isFinite(rawQty) && rawQty > 0 ? Math.min(99, rawQty) : 1;
+    const lineSubtotal = safeItemPrice * safeQty;
+
     return `
-      <div class="cart-item-row" data-key="${item.lineKey}">
-        <img src="${item.image}" alt="${item.name}" class="cart-item-img"
+      <div class="cart-item-row" data-key="${escapeHtml(item.lineKey)}">
+        <img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" class="cart-item-img"
              onerror="this.src='assets/images/boots_product.webp'"/>
         <div class="cart-item-info">
           <div class="cart-item-top">
-            <a href="product.html?id=${encodeURIComponent(item.id)}" class="cart-item-title" onclick="closeCartDrawer()">${item.name}</a>
-            <button class="cart-item-remove" onclick="handleRemoveCartItem('${item.lineKey}')" title="Remove item" aria-label="Remove item">
+            <a href="product.html?id=${encodeURIComponent(item.id)}" class="cart-item-title" onclick="closeCartDrawer()">${escapeHtml(item.name)}</a>
+            <button class="cart-item-remove" onclick="handleRemoveCartItem('${escapeHtml(item.lineKey)}')" title="Remove item" aria-label="Remove item">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
               </svg>
             </button>
           </div>
           <div class="cart-item-meta">
-            ${item.version ? `<span class="cart-meta-version" style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;font-size:0.75rem;font-weight:600;color:var(--accent-gold, #f59e0b);margin-right:6px;">${item.version}</span>` : ""}
-            ${item.size ? `<span class="cart-meta-size">Size: <strong>${item.size}</strong></span>` : ""}
-            ${item.color && item.color !== "Default" ? `<span class="cart-meta-color">• Color: ${item.color}</span>` : ""}
+            ${item.version ? `<span class="cart-meta-version" style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;font-size:0.75rem;font-weight:600;color:var(--accent-gold, #f59e0b);margin-right:6px;">${escapeHtml(item.version)}</span>` : ""}
+            ${item.size ? `<span class="cart-meta-size">Size: <strong>${escapeHtml(item.size)}</strong></span>` : ""}
+            ${item.color && item.color !== "Default" ? `<span class="cart-meta-color">• Color: ${escapeHtml(item.color)}</span>` : ""}
           </div>
           <div class="cart-item-bottom">
             <div class="qty-stepper">
-              <button class="qty-btn" onclick="handleQtyChange('${item.lineKey}', ${item.quantity - 1})" aria-label="Decrease quantity">−</button>
-              <span class="qty-value">${item.quantity}</span>
-              <button class="qty-btn" onclick="handleQtyChange('${item.lineKey}', ${item.quantity + 1})" aria-label="Increase quantity">+</button>
+              <button class="qty-btn" onclick="handleQtyChange('${escapeHtml(item.lineKey)}', ${safeQty - 1})" aria-label="Decrease quantity">−</button>
+              <span class="qty-value">${safeQty}</span>
+              <button class="qty-btn" onclick="handleQtyChange('${escapeHtml(item.lineKey)}', ${safeQty + 1})" aria-label="Increase quantity">+</button>
             </div>
             <div class="cart-item-prices">
-              <span class="cart-unit-price">${formatPrice(item.price)} each</span>
-              <strong class="cart-line-subtotal">${formatPrice(lineSubtotal)}</strong>
+              <span class="cart-unit-price">${formatPriceSafe(safeItemPrice)} each</span>
+              <strong class="cart-line-subtotal">${formatPriceSafe(lineSubtotal)}</strong>
             </div>
           </div>
         </div>
@@ -388,7 +576,7 @@ function renderCartDrawer() {
 
 // ─── Drawer Controls ─────────────────────────────────────────
 
-function openCartDrawer() {
+function openCartDrawer(options = {}) {
   injectCartUIElements();
   syncHeaderCartButtons();
   renderCartDrawer();
@@ -397,26 +585,96 @@ function openCartDrawer() {
   const drawer = document.getElementById("qj-cart-drawer");
 
   if (backdrop && drawer) {
+    if (typeof document !== "undefined" && document.activeElement) {
+      lastFocusedElementBeforeDrawer = document.activeElement;
+    }
+
     backdrop.classList.add("open");
     drawer.classList.add("open");
-    document.body.style.overflow = "hidden";
+    drawer.setAttribute("aria-hidden", "false");
+    lockBodyScroll();
+
+    // Show floating delivery notice overlay
+    showCartDeliveryNotice();
+
+    // History API: Push state on drawer open to support browser back / mobile swipe-back
+    if (!options.fromHistory && !isDrawerHistoryPushed && typeof window !== "undefined" && window.history && typeof window.history.pushState === "function") {
+      try {
+        window.history.pushState({ qjDrawer: "cart" }, "", window.location.href);
+        isDrawerHistoryPushed = true;
+      } catch (err) {
+        console.warn("[QJ Cart] history.pushState failed:", err);
+      }
+    }
+
+    // Accessible polite announcement on drawer open
+    const currentItems = typeof getCartItems === "function" ? getCartItems() : [];
+    const currentTotals = typeof getCartTotals === "function" ? getCartTotals() : { itemCount: 0, subtotal: 0, deliveryFee: 0, total: 0 };
+    if (currentItems.length === 0) {
+      announceCartTotals("Shopping cart is empty. Subtotal ₦0, Delivery ₦0, Total ₦0.");
+    } else {
+      announceCartTotals(`Shopping cart: ${currentTotals.itemCount} item${currentTotals.itemCount === 1 ? "" : "s"}. Subtotal ${formatPriceSafe(currentTotals.subtotal)}, Delivery ₦5,000, Total ${formatPriceSafe(currentTotals.total)}.`);
+    }
+
+    // Accessible focus management: focus close button
+    const closeBtn = drawer.querySelector(".cart-close-btn");
+    if (closeBtn && typeof closeBtn.focus === "function") {
+      setTimeout(() => closeBtn.focus(), 50);
+    }
   }
 }
 
-function closeCartDrawer() {
+function closeCartDrawer(options = {}) {
+  // Ensure delivery notice does not linger after cart closes
+  dismissCartDeliveryNotice(false);
+  isDeliveryNoticeManuallyDismissed = false;
+
   const backdrop = document.getElementById("qj-cart-backdrop");
   const drawer = document.getElementById("qj-cart-drawer");
 
   if (backdrop && drawer) {
     backdrop.classList.remove("open");
     drawer.classList.remove("open");
-    document.body.style.overflow = "";
+    drawer.setAttribute("aria-hidden", "true");
+
+    // Unified scroll restoration (defers if checkout/status modal is active)
+    restoreBodyScroll();
+
+    // History API cleanup: If closed by user interaction (close btn, backdrop, Continue Shopping, Escape), pop the pushed history entry
+    if (isDrawerHistoryPushed && !options.fromPopstate && !isClosingFromPopstate && !options.preserveHistory) {
+      isDrawerHistoryPushed = false;
+      if (typeof window !== "undefined" && window.history && typeof window.history.back === "function") {
+        try {
+          window.history.back();
+        } catch (err) {
+          console.warn("[QJ Cart] history.back failed:", err);
+        }
+      }
+    } else if (options.fromPopstate) {
+      isDrawerHistoryPushed = false;
+    }
+
+    // Restore focus to pre-drawer trigger element if still in DOM and usable (unless checkout modal is taking focus)
+    const checkoutModal = document.getElementById("qj-checkout-modal");
+    const isCheckoutOpen = Boolean(checkoutModal && checkoutModal.style && checkoutModal.style.display && checkoutModal.style.display !== "none");
+    if (!isCheckoutOpen && lastFocusedElementBeforeDrawer && typeof lastFocusedElementBeforeDrawer.focus === "function") {
+      try {
+        const isConnected = lastFocusedElementBeforeDrawer.isConnected !== false;
+        const isUsable = !lastFocusedElementBeforeDrawer.disabled;
+        if (isConnected && isUsable) {
+          lastFocusedElementBeforeDrawer.focus();
+        }
+      } catch (_) {}
+      lastFocusedElementBeforeDrawer = null;
+    }
   }
 }
 
 function handleQtyChange(lineKey, newQty) {
+  const qty = parseInt(newQty, 10);
+  if (isNaN(qty) || !Number.isFinite(qty)) return;
   if (typeof updateCartQuantity === "function") {
-    updateCartQuantity(lineKey, newQty);
+    updateCartQuantity(lineKey, qty);
   }
 }
 
@@ -445,11 +703,10 @@ function openCheckoutModal() {
     return;
   }
 
-  closeCartDrawer();
   const modal = document.getElementById("qj-checkout-modal");
   if (modal) {
     modal.style.display = "flex";
-    document.body.style.overflow = "hidden";
+    lockBodyScroll();
     updateCheckoutSummary();
     handlePaymentMethodChange(currentPaymentMethod || "paystack");
 
@@ -461,6 +718,9 @@ function openCheckoutModal() {
     }
     clearFieldErrors();
   }
+
+  // Preserve history state so back button closes checkout modal smoothly
+  closeCartDrawer({ preserveHistory: true });
 }
 
 let isCheckoutSubmitting = false;
@@ -468,11 +728,34 @@ let isVerifyingPayment = false;
 let currentPaymentMethod = "paystack";
 const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
-function closeCheckoutModal() {
+function closeCheckoutModal(options = {}) {
   const modal = document.getElementById("qj-checkout-modal");
   if (modal) {
     modal.style.display = "none";
-    document.body.style.overflow = "";
+    restoreBodyScroll();
+
+    if (isDrawerHistoryPushed && !options.fromPopstate && !isClosingFromPopstate) {
+      isDrawerHistoryPushed = false;
+      if (typeof window !== "undefined" && window.history && typeof window.history.back === "function") {
+        try {
+          window.history.back();
+        } catch (_) {}
+      }
+    } else if (options.fromPopstate) {
+      isDrawerHistoryPushed = false;
+    }
+
+    // Restore focus to pre-drawer trigger element when checkout closes
+    if (lastFocusedElementBeforeDrawer && typeof lastFocusedElementBeforeDrawer.focus === "function") {
+      try {
+        const isConnected = lastFocusedElementBeforeDrawer.isConnected !== false;
+        const isUsable = !lastFocusedElementBeforeDrawer.disabled;
+        if (isConnected && isUsable) {
+          lastFocusedElementBeforeDrawer.focus();
+        }
+      } catch (_) {}
+      lastFocusedElementBeforeDrawer = null;
+    }
   }
 }
 
@@ -1300,7 +1583,7 @@ function showPaymentStatusModal(contentHtml) {
   if (contentEl) contentEl.innerHTML = contentHtml;
   if (modal) {
     modal.style.display = "flex";
-    document.body.style.overflow = "hidden";
+    lockBodyScroll();
   }
 }
 
@@ -1308,7 +1591,7 @@ function closePaymentStatusModal() {
   const modal = document.getElementById("qj-payment-status-modal");
   if (modal) {
     modal.style.display = "none";
-    document.body.style.overflow = "";
+    restoreBodyScroll();
   }
 }
 
@@ -1343,9 +1626,10 @@ function escapeHtml(str) {
 }
 
 function formatPriceSafe(price) {
-  if (typeof formatPrice === "function") return formatPrice(price);
-  const n = parseInt(price, 10) || 0;
-  return "₦" + n.toLocaleString();
+  const num = Number(price);
+  if (!Number.isFinite(num) || num <= 0) return "₦0";
+  if (typeof formatPrice === "function") return formatPrice(num);
+  return "₦" + Math.round(num).toLocaleString();
 }
 
 // ─── Success Modal & Copy Reference ──────────────────────────
@@ -1360,14 +1644,14 @@ function showOrderSuccessModal(orderRef, waUrl) {
 
   if (modal) {
     modal.style.display = "flex";
-    document.body.style.overflow = "hidden";
+    lockBodyScroll();
   }
 }
 
 function handleFinishOrder() {
   const modal = document.getElementById("qj-success-modal");
   if (modal) modal.style.display = "none";
-  document.body.style.overflow = "";
+  restoreBodyScroll();
 }
 
 function copyOrderReference() {
@@ -1395,11 +1679,112 @@ function showToast(message, duration = 3000) {
 
 // ─── Global Event Listeners ──────────────────────────────────
 
+function handleCartPopstate(event) {
+  const checkoutModal = document.getElementById("qj-checkout-modal");
+  if (checkoutModal && checkoutModal.style.display !== "none") {
+    isClosingFromPopstate = true;
+    closeCheckoutModal({ fromPopstate: true });
+    isClosingFromPopstate = false;
+    return;
+  }
+
+  const drawer = document.getElementById("qj-cart-drawer");
+  if (drawer && drawer.classList.contains("open")) {
+    isClosingFromPopstate = true;
+    closeCartDrawer({ fromPopstate: true });
+    isClosingFromPopstate = false;
+  }
+}
+
+function getDrawerFocusableElements(drawer) {
+  if (!drawer || typeof drawer.querySelectorAll !== "function") return [];
+  const focusables = Array.from(
+    drawer.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+  );
+  return focusables.filter(el => {
+    if (el.disabled) return false;
+    if (typeof el.getAttribute === "function" && el.getAttribute("aria-hidden") === "true") return false;
+    if (el.style && (el.style.display === "none" || el.style.visibility === "hidden")) return false;
+    if (typeof el.closest === "function") {
+      const hiddenAncestor = el.closest('[style*="display: none"], [style*="display:none"], [aria-hidden="true"]');
+      if (hiddenAncestor && hiddenAncestor !== el) return false;
+    }
+    return true;
+  });
+}
+
+function trapCartDrawerFocus(event, drawer) {
+  if (!event || event.key !== "Tab") return;
+
+  const focusables = getDrawerFocusableElements(drawer);
+  if (focusables.length === 0) {
+    event.preventDefault();
+    if (typeof drawer.focus === "function") drawer.focus();
+    return;
+  }
+
+  const firstEl = focusables[0];
+  const lastEl = focusables[focusables.length - 1];
+  const activeEl = typeof document !== "undefined" ? document.activeElement : null;
+
+  if (event.shiftKey) {
+    // Shift + Tab: reverse cycling
+    if (activeEl === firstEl || !focusables.includes(activeEl)) {
+      event.preventDefault();
+      lastEl.focus();
+    }
+  } else {
+    // Tab: forward cycling
+    if (activeEl === lastEl || !focusables.includes(activeEl)) {
+      event.preventDefault();
+      firstEl.focus();
+    }
+  }
+}
+
+function handleCartKeydown(event) {
+  if (!event || !event.key) return;
+
+  const checkoutModal = document.getElementById("qj-checkout-modal");
+  const isCheckoutOpen = Boolean(checkoutModal && checkoutModal.style && checkoutModal.style.display && checkoutModal.style.display !== "none");
+  const statusModal = document.getElementById("qj-payment-status-modal");
+  const isStatusOpen = Boolean(statusModal && statusModal.style && statusModal.style.display && statusModal.style.display !== "none");
+  const successModal = document.getElementById("qj-success-modal");
+  const isSuccessOpen = Boolean(successModal && successModal.style && successModal.style.display && successModal.style.display !== "none");
+
+  // Defer / ignore cart focus trap while higher-priority modals are open
+  if (isCheckoutOpen || isStatusOpen || isSuccessOpen) {
+    if (event.key === "Escape" || event.key === "Esc") {
+      if (isCheckoutOpen) closeCheckoutModal();
+      else if (isStatusOpen) closePaymentStatusModal();
+      else if (isSuccessOpen) handleFinishOrder();
+    }
+    return;
+  }
+
+  const drawer = document.getElementById("qj-cart-drawer");
+  const isDrawerOpen = Boolean(drawer && drawer.classList && drawer.classList.contains("open"));
+  if (!isDrawerOpen) return;
+
+  if (event.key === "Escape" || event.key === "Esc") {
+    closeCartDrawer();
+    return;
+  }
+
+  if (event.key === "Tab") {
+    trapCartDrawerFocus(event, drawer);
+  }
+}
+
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("qj:cart-updated", () => {
     syncHeaderCartButtons();
     renderCartDrawer();
   });
+  window.addEventListener("popstate", handleCartPopstate);
+  window.addEventListener("keydown", handleCartKeydown);
 }
 
 if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
@@ -1414,10 +1799,25 @@ if (typeof document !== "undefined" && typeof document.addEventListener === "fun
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     injectCartUIElements,
+    renderCartDrawer,
     openCartDrawer,
     closeCartDrawer,
+    handleQtyChange,
+    handleRemoveCartItem,
+    handleClearCartPrompt,
+    handleCartPopstate,
+    handleCartKeydown,
+    getDrawerFocusableElements,
+    trapCartDrawerFocus,
+    announceCartTotals,
+    showCartDeliveryNotice,
+    dismissCartDeliveryNotice,
+    isAnyOverlayActive,
+    lockBodyScroll,
+    restoreBodyScroll,
     openCheckoutModal,
     closeCheckoutModal,
+    updateCheckoutSummary,
     handlePaymentMethodChange,
     handlePaymentKeydown,
     handleCheckoutSubmit,
@@ -1434,6 +1834,7 @@ if (typeof module !== "undefined" && module.exports) {
     escapeHtml,
     NIGERIA_STATES,
     EMAIL_REGEX,
+    STANDARD_DELIVERY_FEE: 5000,
     saveCheckoutSnapshot,
     getCheckoutSnapshot,
     isReferenceReconciled,
