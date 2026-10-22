@@ -163,16 +163,18 @@ function updateWhatsAppLink(event, productId) {
 }
 
 // Update links on size radio change using permanent product registry
-document.addEventListener("change", function(e) {
-  if (e.target && e.target.type === "radio" && e.target.name.startsWith("size-")) {
-    const productId = e.target.name.replace("size-", "");
-    const product = (typeof getProductById === "function") ? getProductById(productId) : null;
-    const btn = document.getElementById(`order-${productId}`);
-    if (product && btn) {
-      btn.href = buildWhatsAppLink(product, e.target.value);
+if (typeof document !== "undefined") {
+  document.addEventListener("change", function(e) {
+    if (e.target && e.target.type === "radio" && e.target.name.startsWith("size-")) {
+      const productId = e.target.name.replace("size-", "");
+      const product = (typeof getProductById === "function") ? getProductById(productId) : null;
+      const btn = document.getElementById(`order-${productId}`);
+      if (product && btn) {
+        btn.href = buildWhatsAppLink(product, e.target.value);
+      }
     }
-  }
-});
+  });
+}
 
 function getCategoryLabel(cat) {
   return { boots: "Football Boots", jerseys: "Jersey", sportswear: "Sportswear" }[cat] || cat;
@@ -211,24 +213,25 @@ function renderProducts(products, containerId, append = false) {
   });
 }
 
-// ─── Async Page Initialisation & "Load More" Pagination ──────
+// ─── Async Page Initialisation & Full Catalog Pagination ──────
 
 /**
- * Asynchronously load and render products for category/catalogue pages with Load More pagination.
+ * Asynchronously load and render products for category/catalogue pages with paginated navigation.
  * @param {string} containerId - Grid container ID
  * @param {string} defaultCategory - Default category filter ('all' or slug)
+ * @param {Object} [initOptions] - Optional configurations (e.g. initialPageSize)
  */
-async function initPageProducts(containerId, defaultCategory = "all") {
-  showSkeletonGrid(containerId, 8);
-
+async function initPageProducts(containerId, defaultCategory = "all", initOptions = {}) {
   const tabs = document.querySelectorAll(".filter-tab");
   const searchInput = document.getElementById("catalog-search");
 
   let currentCategory = defaultCategory;
   let currentSearch = "";
-  let currentPage = 0;
+  let currentPage = 0; // 0-indexed internally
+  let pageSize = (initOptions && initOptions.pageSize) || 12; // default 12, optional 24
   let totalMatchingCount = 0;
-  let loadedProductsCount = 0;
+  let totalPages = 1;
+  let currentRequestId = 0;
 
   // Ensure pagination container exists right after the grid
   let paginationWrapper = document.getElementById(`pagination-${containerId}`);
@@ -242,44 +245,120 @@ async function initPageProducts(containerId, defaultCategory = "all") {
     }
   }
 
-  function updatePaginationUI(hasMore) {
+  function updatePaginationUI() {
     if (!paginationWrapper) return;
     if (totalMatchingCount === 0) {
       paginationWrapper.innerHTML = "";
       return;
     }
 
+    const fromItem = (currentPage * pageSize) + 1;
+    const toItem = Math.min((currentPage + 1) * pageSize, totalMatchingCount);
+
+    // Build page numbers (with windowing if totalPages > 7)
+    let pageNumbers = [];
+    if (totalPages <= 7) {
+      for (let i = 0; i < totalPages; i++) pageNumbers.push(i);
+    } else {
+      pageNumbers.push(0);
+      let start = Math.max(1, currentPage - 1);
+      let end = Math.min(totalPages - 2, currentPage + 1);
+
+      if (currentPage <= 2) {
+        start = 1;
+        end = 3;
+      } else if (currentPage >= totalPages - 3) {
+        start = totalPages - 4;
+        end = totalPages - 2;
+      }
+
+      if (start > 1) pageNumbers.push("ellipsis-start");
+      for (let i = start; i <= end; i++) pageNumbers.push(i);
+      if (end < totalPages - 2) pageNumbers.push("ellipsis-end");
+      pageNumbers.push(totalPages - 1);
+    }
+
+    const pagesHTML = pageNumbers.map(item => {
+      if (typeof item === "string") {
+        return `<span class="pagination-ellipsis" aria-hidden="true">…</span>`;
+      }
+      const isActive = item === currentPage;
+      return `<button type="button" class="pagination-btn pagination-page-btn ${isActive ? "active" : ""}"
+                data-page="${item}" aria-label="Page ${item + 1}" ${isActive ? 'aria-current="page"' : ''}>
+                ${item + 1}
+              </button>`;
+    }).join("");
+
     paginationWrapper.innerHTML = `
-      <div class="pagination-status" style="text-align:center;margin-top:36px;display:flex;flex-direction:column;align-items:center;gap:14px;">
-        <p style="color:var(--text-secondary);font-size:0.9rem;font-weight:500;">
-          Showing <span style="color:var(--accent-green);font-weight:700;">${loadedProductsCount}</span> of <span style="color:var(--text-primary);font-weight:700;">${totalMatchingCount}</span> products
-        </p>
-        ${hasMore ? `
-          <button id="btn-load-more-${containerId}" class="btn-secondary" style="padding:12px 32px;font-size:0.92rem;border-radius:var(--radius-md);cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
-            <span>Load More Products</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-            </svg>
+      <nav class="pagination-bar" aria-label="Catalog pagination navigation">
+        <div class="pagination-info">
+          <span>Showing <strong>${fromItem}–${toItem}</strong> of <strong>${totalMatchingCount}</strong> products</span>
+          <label class="page-size-label">
+            <span>Per page:</span>
+            <select id="select-page-size-${containerId}" class="page-size-select" aria-label="Products per page">
+              <option value="12" ${pageSize === 12 ? "selected" : ""}>12</option>
+              <option value="24" ${pageSize === 24 ? "selected" : ""}>24</option>
+            </select>
+          </label>
+        </div>
+        <div class="pagination-controls">
+          <button type="button" id="btn-prev-${containerId}" class="pagination-btn pagination-nav-btn"
+                  aria-label="Previous page" ${currentPage === 0 ? "disabled aria-disabled=\"true\"" : ""}>
+            ‹ Prev
           </button>
-        ` : ""}
-      </div>
+          <div class="pagination-pages-group">
+            ${pagesHTML}
+          </div>
+          <button type="button" id="btn-next-${containerId}" class="pagination-btn pagination-nav-btn"
+                  aria-label="Next page" ${currentPage >= totalPages - 1 ? "disabled aria-disabled=\"true\"" : ""}>
+            Next ›
+          </button>
+        </div>
+      </nav>
     `;
 
-    if (hasMore) {
-      const loadMoreBtn = document.getElementById(`btn-load-more-${containerId}`);
-      if (loadMoreBtn) {
-        loadMoreBtn.addEventListener("click", loadNextPage);
-      }
+    // Attach listeners
+    const prevBtn = document.getElementById(`btn-prev-${containerId}`);
+    if (prevBtn && currentPage > 0) {
+      prevBtn.addEventListener("click", () => goToPage(currentPage - 1));
+    }
+
+    const nextBtn = document.getElementById(`btn-next-${containerId}`);
+    if (nextBtn && currentPage < totalPages - 1) {
+      nextBtn.addEventListener("click", () => goToPage(currentPage + 1));
+    }
+
+    const pageBtns = paginationWrapper.querySelectorAll(".pagination-page-btn");
+    pageBtns.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const targetPage = parseInt(btn.dataset.page, 10);
+        if (!isNaN(targetPage) && targetPage !== currentPage) {
+          goToPage(targetPage);
+        }
+      });
+    });
+
+    const sizeSelect = document.getElementById(`select-page-size-${containerId}`);
+    if (sizeSelect) {
+      sizeSelect.addEventListener("change", (e) => {
+        const newSize = parseInt(e.target.value, 10);
+        if (newSize > 0 && newSize !== pageSize) {
+          pageSize = newSize;
+          currentPage = 0; // Reset to page 1
+          loadPage(false);
+        }
+      });
     }
   }
 
-  async function loadInitialPage() {
-    currentPage = 0;
-    loadedProductsCount = 0;
-    showSkeletonGrid(containerId, 8);
-    if (paginationWrapper) paginationWrapper.innerHTML = "";
+  async function loadPage(shouldScroll = true) {
+    const requestId = ++currentRequestId;
+    showSkeletonGrid(containerId, Math.min(pageSize, 8));
 
-    const options = { page: 0 };
+    const options = {
+      page: currentPage,
+      pageSize: pageSize,
+    };
     if (currentCategory !== "all") options.category = currentCategory;
     if (currentSearch.trim()) options.search = currentSearch.trim();
 
@@ -288,55 +367,77 @@ async function initPageProducts(containerId, defaultCategory = "all") {
         ? await fetchProductsPaginated(options)
         : { products: await fetchProducts(options), totalCount: 0, hasMore: false };
 
-      renderProducts(result.products, containerId, false);
-      totalMatchingCount = result.totalCount;
-      loadedProductsCount = result.products.length;
+      if (requestId !== currentRequestId) return; // Stale request discard
 
-      updatePaginationUI(result.hasMore);
+      totalMatchingCount = typeof result.totalCount === "number" ? result.totalCount : result.products.length;
+      totalPages = Math.max(1, Math.ceil(totalMatchingCount / pageSize));
+
+      // Boundary check if total pages shrank
+      if (currentPage >= totalPages && totalPages > 0) {
+        currentPage = totalPages - 1;
+        return loadPage(shouldScroll);
+      }
+
+      // Render only products for the current page (clean DOM replacement)
+      renderProducts(result.products, containerId, false);
+
+      updatePaginationUI();
+
+      if (shouldScroll && typeof window !== "undefined") {
+        const gridEl = document.getElementById(containerId);
+        if (gridEl && window.scrollY > gridEl.offsetTop - 60) {
+          window.scrollTo({ top: gridEl.offsetTop - 60, behavior: "smooth" });
+        }
+      }
     } catch (err) {
-      console.error("[QJ] Failed to load initial products:", err);
-      const fallback = (typeof DEFAULT_PRODUCTS !== "undefined" && Array.isArray(DEFAULT_PRODUCTS))
-        ? (currentCategory !== "all" ? DEFAULT_PRODUCTS.filter(p => p.category === currentCategory) : DEFAULT_PRODUCTS)
+      if (requestId !== currentRequestId) return;
+      console.error("[QJ] Failed to load paginated products:", err);
+
+      let fallback = (typeof DEFAULT_PRODUCTS !== "undefined" && Array.isArray(DEFAULT_PRODUCTS))
+        ? [...DEFAULT_PRODUCTS]
         : [];
-      if (fallback.length > 0) {
-        renderProducts(fallback, containerId, false);
-        totalMatchingCount = fallback.length;
-        loadedProductsCount = fallback.length;
-        updatePaginationUI(false);
+      if (currentCategory !== "all") fallback = fallback.filter(p => p.category === currentCategory);
+      if (currentSearch.trim()) {
+        const q = currentSearch.trim().toLowerCase();
+        fallback = fallback.filter(p => (p.name || "").toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q));
+      }
+
+      totalMatchingCount = fallback.length;
+      totalPages = Math.max(1, Math.ceil(totalMatchingCount / pageSize));
+
+      if (totalMatchingCount > 0) {
+        const from = currentPage * pageSize;
+        const pageItems = fallback.slice(from, from + pageSize);
+        renderProducts(pageItems, containerId, false);
+        updatePaginationUI();
       } else {
         const container = document.getElementById(containerId);
         if (container) {
           container.innerHTML = `
             <div class="empty-state" style="padding: 40px 20px; text-align: center;">
-              <p style="font-size: 1.1rem; color: var(--text-primary); margin-bottom: 8px;">⚠️ Unable to load products</p>
-              <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 16px;">Please check your connection and try again.</p>
-              <button class="btn-secondary" onclick="location.reload()" style="padding: 8px 18px; font-size: 0.85rem;">↻ Reload Page</button>
+              <p style="font-size: 1.1rem; color: var(--text-primary); margin-bottom: 8px;">🔍 No products found</p>
+              <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 16px;">Try adjusting your filters or search terms.</p>
+              <button class="btn-secondary" id="btn-reset-filters-${containerId}" style="padding: 8px 18px; font-size: 0.85rem;">↻ Reset Filters</button>
             </div>`;
+          const resetBtn = document.getElementById(`btn-reset-filters-${containerId}`);
+          if (resetBtn) {
+            resetBtn.addEventListener("click", () => {
+              if (searchInput) searchInput.value = "";
+              currentSearch = "";
+              applyFilter(defaultCategory);
+            });
+          }
         }
+        if (paginationWrapper) paginationWrapper.innerHTML = "";
       }
     }
   }
 
-  async function loadNextPage() {
-    const loadMoreBtn = document.getElementById(`btn-load-more-${containerId}`);
-    if (loadMoreBtn) {
-      loadMoreBtn.disabled = true;
-      loadMoreBtn.innerHTML = `<span>Loading…</span>`;
+  function goToPage(targetPage) {
+    if (targetPage >= 0 && targetPage < totalPages && targetPage !== currentPage) {
+      currentPage = targetPage;
+      loadPage(true);
     }
-
-    currentPage += 1;
-    const options = { page: currentPage };
-    if (currentCategory !== "all") options.category = currentCategory;
-    if (currentSearch.trim()) options.search = currentSearch.trim();
-
-    const result = (typeof fetchProductsPaginated === "function")
-      ? await fetchProductsPaginated(options)
-      : { products: await fetchProducts(options), totalCount: totalMatchingCount, hasMore: false };
-
-    renderProducts(result.products, containerId, true);
-    loadedProductsCount += result.products.length;
-
-    updatePaginationUI(result.hasMore);
   }
 
   function applyFilter(cat) {
@@ -344,7 +445,8 @@ async function initPageProducts(containerId, defaultCategory = "all") {
     const activeTab = document.querySelector(`.filter-tab[data-cat="${cat}"]`);
     if (activeTab) activeTab.classList.add("active");
     currentCategory = cat;
-    loadInitialPage();
+    currentPage = 0; // Reset to page 1 on filter change
+    loadPage(false);
   }
 
   tabs.forEach(tab => tab.addEventListener("click", () => applyFilter(tab.dataset.cat)));
@@ -354,11 +456,26 @@ async function initPageProducts(containerId, defaultCategory = "all") {
     searchInput.addEventListener("input", e => {
       clearTimeout(debounceTimer);
       currentSearch = e.target.value;
-      debounceTimer = setTimeout(loadInitialPage, 300);
+      debounceTimer = setTimeout(() => {
+        currentPage = 0; // Reset to page 1 on search change
+        loadPage(false);
+      }, 300);
     });
   }
 
+  // Initial load
   applyFilter(defaultCategory);
+
+  return {
+    getCurrentPage: () => currentPage,
+    getPageSize: () => pageSize,
+    getTotalCount: () => totalMatchingCount,
+    getTotalPages: () => totalPages,
+    goToPage,
+    setPageSize: (size) => { pageSize = size; currentPage = 0; return loadPage(false); },
+    setCategory: (cat) => applyFilter(cat),
+    setSearch: (query) => { currentSearch = query; currentPage = 0; return loadPage(false); }
+  };
 }
 
 /**
@@ -417,7 +534,8 @@ async function renderFeatured(containerId, count = 4) {
 
 // ─── Shared UI: Hamburger, Navbar, Scroll Reveal ─────────────
 
-document.addEventListener("DOMContentLoaded", () => {
+if (typeof document !== "undefined") {
+  document.addEventListener("DOMContentLoaded", () => {
   updateHeroProductCount();
 
   // Hamburger menu
@@ -504,4 +622,21 @@ document.addEventListener("DOMContentLoaded", () => {
   } else {
     animates.forEach(el => el.classList.add("visible"));
   }
-});
+  });
+}
+
+// ─── CommonJS Exports for Testing ───────────────────────────
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    handleProductImageError,
+    showSkeletonGrid,
+    createProductCard,
+    handleCardAddToCart,
+    updateWhatsAppLink,
+    getCategoryLabel,
+    renderProducts,
+    initPageProducts,
+    updateHeroProductCount,
+    renderFeatured
+  };
+}

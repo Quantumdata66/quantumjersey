@@ -471,7 +471,7 @@ async function openAdminOrderDetail(orderIdOrRef) {
       <!-- Customer & Delivery info -->
       <div class="admin-modal-section" style="background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:18px;margin-bottom:18px;">
         <h4 style="font-size:0.9rem;margin-bottom:10px;color:var(--accent-green);">👤 Customer & Delivery Information</h4>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.86rem;">
+        <div class="admin-modal-grid-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.86rem;">
           <div><strong>Customer Name:</strong> ${order.customer_name}</div>
           <div>
             <strong>Phone:</strong> <a href="tel:${order.customer_phone}" style="color:var(--accent-green);">${order.customer_phone}</a>
@@ -491,8 +491,8 @@ async function openAdminOrderDetail(orderIdOrRef) {
       <!-- Items Table -->
       <div class="admin-modal-section" style="margin-bottom:18px;">
         <h4 style="font-size:0.9rem;margin-bottom:10px;color:var(--text-secondary);">🛍️ Order Items (${items.length})</h4>
-        <div style="border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;">
-          <table style="width:100%;border-collapse:collapse;font-size:0.84rem;text-align:left;">
+        <div class="admin-modal-table-wrap" style="border:1px solid var(--border);border-radius:var(--radius-md);overflow-x:auto;-webkit-overflow-scrolling:touch;">
+          <table style="width:100%;min-width:440px;border-collapse:collapse;font-size:0.84rem;text-align:left;">
             <thead>
               <tr style="background:var(--bg-surface-2);border-bottom:1px solid var(--border);color:var(--text-muted);">
                 <th style="padding:10px 12px;">Item</th>
@@ -1103,6 +1103,7 @@ async function loadAdminProductList() {
 
     list.innerHTML = products.map(p => `
       <div class="admin-product-row">
+        <div class="admin-product-row-top">
         <img src="${p.image}" alt="${p.name}" class="admin-product-img"
              onerror="this.src='assets/images/boots_product.webp'"/>
         <div class="admin-product-info">
@@ -1111,6 +1112,7 @@ async function loadAdminProductList() {
           <span class="admin-price">${p.versions ? `₦${p.versions.fan.price.toLocaleString()} / ₦${p.versions.player.price.toLocaleString()}` : `₦${p.price.toLocaleString()}`}</span>
           <span class="admin-sizes">${p.versions ? `<span style="color:var(--accent-green);font-weight:600;">Fan: ₦${p.versions.fan.price.toLocaleString()} (${p.versions.fan.sizes.join(", ")}) · Player: ₦${p.versions.player.price.toLocaleString()} (${p.versions.player.sizes.join(", ")})</span>` : ((Array.isArray(p.sizes) && p.sizes.length > 0) ? `Sizes: ${p.sizes.join(", ")}` : '<span style="color:var(--text-muted);">No size required</span>')}</span>
           ${p.featured ? '<span class="admin-featured-tag">⭐ Featured</span>' : ""}
+        </div>
         </div>
         <div class="admin-row-actions">
           <button class="btn-admin-edit"
