@@ -190,6 +190,72 @@ try {
   reportFail(6, 'Footer simplification test failed', err);
 }
 
+// ─── Test 7: Homepage Flow Sequence & Section Removal ───────────
+try {
+  const indexHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
+  const css = fs.readFileSync(path.join(ROOT, 'css', 'style.css'), 'utf8').replace(/\r\n/g, '\n');
+
+  // 1. Verify complete absence of deleted sections in index.html
+  assert.ok(!indexHtml.includes('Shop by <span class="text-accent">Category</span>'),
+    'index.html must not contain "Shop by Category" heading');
+  assert.ok(!indexHtml.includes('class="category-grid"'),
+    'index.html must not contain .category-grid');
+  assert.ok(!indexHtml.includes('class="category-card"'),
+    'index.html must not contain .category-card');
+  assert.ok(!indexHtml.includes('class="tiktok-strip'),
+    'index.html must not contain .tiktok-strip promotional section');
+  assert.ok(!indexHtml.includes('Ready to <span class="text-accent">Order?</span>'),
+    'index.html must not contain redundant "Ready to Order?" CTA section');
+
+  // 2. Verify complete absence of genuinely unused CSS in style.css
+  assert.ok(!css.includes('.category-grid {'), 'style.css must not contain .category-grid rules');
+  assert.ok(!css.includes('.category-card {'), 'style.css must not contain .category-card rules');
+  assert.ok(!css.includes('.tiktok-strip {'), 'style.css must not contain .tiktok-strip rules');
+
+  // 3. Verify mobile category pill-bar is preserved
+  assert.ok(indexHtml.includes('class="mobile-cat-bar"'), 'index.html must preserve .mobile-cat-bar');
+  assert.ok(css.includes('.mobile-cat-bar {\n  display: none;\n}'), 'style.css preserves .mobile-cat-bar desktop rule');
+  assert.ok(css.includes('.mobile-cat-bar {\n    display: block;'), 'style.css preserves .mobile-cat-bar mobile rule');
+
+  // 4. Verify exact homepage section order
+  const heroIndex = indexHtml.indexOf('<section class="hero">');
+  const mobileCatIndex = indexHtml.indexOf('<nav class="mobile-cat-bar"');
+  const featuredSectionIndex = indexHtml.indexOf('<!-- ── Featured Products ── -->');
+  const whyChooseIndex = indexHtml.indexOf('Why Shop <span class="text-accent">Quantum Jersey?</span>');
+  const faqIndex = indexHtml.indexOf('Frequently Asked <span class="text-accent">Questions</span>');
+  const footerIndex = indexHtml.indexOf('<footer');
+
+  assert.ok(heroIndex !== -1, 'Hero section found');
+  assert.ok(mobileCatIndex !== -1, 'Mobile category pill-bar found');
+  assert.ok(featuredSectionIndex !== -1, 'Featured products section found');
+  assert.ok(whyChooseIndex !== -1, 'Why Choose Us section found');
+  assert.ok(faqIndex !== -1, 'FAQ section found');
+  assert.ok(footerIndex !== -1, 'Footer section found');
+
+  assert.ok(heroIndex < mobileCatIndex, 'Hero precedes mobile category bar');
+  assert.ok(mobileCatIndex < featuredSectionIndex, 'Mobile category bar precedes Featured Products');
+  assert.ok(featuredSectionIndex < whyChooseIndex, 'Featured Products precedes Why Choose Us');
+  assert.ok(whyChooseIndex < faqIndex, 'Why Choose Us precedes FAQ');
+  assert.ok(faqIndex < footerIndex, 'FAQ precedes Footer');
+
+  // Verify Featured Products immediately follows Hero / mobile-cat-bar (no intervening sections)
+  const betweenMobileCatAndFeatured = indexHtml.substring(mobileCatIndex, featuredSectionIndex);
+  assert.ok(!betweenMobileCatAndFeatured.includes('<section'),
+    'No intervening section between mobile category bar and Featured Products');
+
+  // Verify Footer immediately follows FAQ (no intervening sections)
+  const betweenFaqAndFooter = indexHtml.substring(faqIndex, footerIndex);
+  const faqSectionEnd = betweenFaqAndFooter.indexOf('</section>');
+  assert.ok(faqSectionEnd !== -1, 'FAQ section closes before footer');
+  const afterFaqClose = betweenFaqAndFooter.substring(faqSectionEnd + 10);
+  assert.ok(!afterFaqClose.includes('<section'),
+    'No intervening section between FAQ and Footer');
+
+  reportPass(7, 'Exact homepage section order verified and deleted sections confirmed absent');
+} catch (err) {
+  reportFail(7, 'Homepage flow sequence verification failed', err);
+}
+
 console.log('\n================================================================');
 console.log(`STAGE 5M TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
 console.log('================================================================\n');
