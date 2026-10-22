@@ -87,6 +87,8 @@ function setupMockEnv() {
       querySelector: (sel) => {
         if (sel === '.cart-close-btn') return elements.get('cart-close-btn') || createMockElement('cart-close-btn', 'button');
         if (sel === '#cart-live-region') return elements.get('cart-live-region');
+        if (sel === '#cart-delivery-notice') return elements.get('cart-delivery-notice');
+        if (sel === '.delivery-notice-dismiss') return elements.get('delivery-notice-dismiss');
         return null;
       },
       querySelectorAll: (sel) => {
@@ -118,6 +120,17 @@ function setupMockEnv() {
   const liveRegion = createMockElement('cart-live-region');
   liveRegion.setAttribute('aria-live', 'polite');
   liveRegion.setAttribute('aria-atomic', 'true');
+
+  const deliveryNotice = createMockElement('cart-delivery-notice');
+  deliveryNotice.style.display = 'none';
+  deliveryNotice.setAttribute('aria-hidden', 'true');
+  const dismissBtn = createMockElement('delivery-notice-dismiss', 'button');
+  dismissBtn.setAttribute('aria-label', 'Dismiss delivery notice');
+  deliveryNotice.children.push(dismissBtn);
+  deliveryNotice.querySelector = (sel) => {
+    if (sel === '.delivery-notice-dismiss') return dismissBtn;
+    return null;
+  };
 
   const historyStack = [{ state: null, url: 'http://localhost/' }];
   let historyIdx = 0;
@@ -739,6 +752,69 @@ try {
   reportPass(17, 'Screen-reader polite live region announces cart totals, item counts, and empty states without noise');
 } catch (err) {
   reportFail(17, 'Live region announcement test failed', err);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 18. Floating Delivery Notice Lifecycle & Non-Blocking Overlay
+// ─────────────────────────────────────────────────────────────
+try {
+  // Case 18A: Source verification for content, semantics, and CSS floating overlay
+  const cartUiJs = fs.readFileSync(path.join(__dirname, '../js/cart-ui.js'), 'utf8');
+  const styleCss = fs.readFileSync(path.join(__dirname, '../css/style.css'), 'utf8');
+
+  assert(cartUiJs.includes('Delivery Information'), 'Notice includes "Delivery Information" title');
+  assert(cartUiJs.includes('Nationwide delivery: <strong>₦5,000</strong> per order.') || cartUiJs.includes('Nationwide delivery: ₦5,000 per order'), 'Notice specifies ₦5,000 nationwide delivery');
+  assert(cartUiJs.includes('Remote locations: courier waybill surcharges are confirmed via WhatsApp'), 'Notice includes remote waybill surcharges via WhatsApp');
+  assert(cartUiJs.includes('aria-label="Dismiss delivery notice"'), 'Dismiss button has accessible aria-label');
+  assert(cartUiJs.includes('role="status"'), 'Notice has accessible status role');
+  assert(cartUiJs.includes('aria-live="polite"'), 'Notice marked with aria-live="polite"');
+
+  // Verify CSS positions it as a non-blocking overlay (position: absolute)
+  assert(styleCss.includes('.cart-delivery-notice'), 'Stylesheet contains .cart-delivery-notice rule');
+  assert(styleCss.includes('position: absolute'), 'Notice uses position: absolute so it does not reserve permanent flow space');
+  assert(styleCss.includes('prefers-reduced-motion') && styleCss.includes('.cart-delivery-notice'), 'Notice supports prefers-reduced-motion');
+
+  // Case 18B: Notice appears when cart drawer opens
+  const { elements, mockDocument } = setupMockEnv();
+  const noticeEl = elements.get('cart-delivery-notice');
+  const drawerEl = elements.get('qj-cart-drawer');
+
+  cartUI.openCartDrawer();
+  assert.strictEqual(noticeEl.style.display, 'block', 'Notice display is set to block on drawer open');
+  assert(noticeEl.classList.contains('show'), 'Notice has .show class added');
+  assert.strictEqual(noticeEl.getAttribute('aria-hidden'), 'false', 'Notice marked aria-hidden="false" when active');
+
+  // Case 18C: Manual dismissal hides notice and prevents re-display during same open session
+  cartUI.dismissCartDeliveryNotice(true);
+  assert.strictEqual(noticeEl.style.display, 'none', 'Notice hidden after manual dismissal');
+  assert(!noticeEl.classList.contains('show'), '.show removed on dismissal');
+  assert.strictEqual(noticeEl.getAttribute('aria-hidden'), 'true', 'Notice marked aria-hidden="true"');
+
+  // Triggering showCartDeliveryNotice during same session does not reopen
+  cartUI.showCartDeliveryNotice();
+  assert.strictEqual(noticeEl.style.display, 'none', 'Notice does not re-appear in same cart-opening session after manual dismissal');
+
+  // Case 18D: Closing and reopening the cart drawer allows the notice to show again
+  cartUI.closeCartDrawer();
+  assert.strictEqual(noticeEl.style.display, 'none', 'Notice is hidden when drawer closes');
+
+  cartUI.openCartDrawer();
+  assert.strictEqual(noticeEl.style.display, 'block', 'Notice appears again when cart is closed and reopened');
+  assert(noticeEl.classList.contains('show'), 'Notice has .show class on fresh open');
+
+  // Case 18E: Auto-dismissal after timeout (~4.5s)
+  cartUI.dismissCartDeliveryNotice(false);
+  assert.strictEqual(noticeEl.style.display, 'none', 'Auto-dismiss hides notice');
+
+  // Case 18F: No lingering if cart is closed while notice is still visible
+  cartUI.openCartDrawer();
+  assert.strictEqual(noticeEl.style.display, 'block', 'Notice open before closing drawer');
+  cartUI.closeCartDrawer();
+  assert.strictEqual(noticeEl.style.display, 'none', 'Notice does not linger after cart drawer closes');
+
+  reportPass(18, 'Floating delivery notice appears on open, auto/manually dismisses, does not linger, and allows fresh show on reopen');
+} catch (err) {
+  reportFail(18, 'Floating delivery notice test failed', err);
 }
 
 console.log('\n================================================================');

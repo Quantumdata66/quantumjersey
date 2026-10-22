@@ -37,13 +37,21 @@ function injectCartUIElements() {
         <button class="cart-close-btn" onclick="closeCartDrawer()" aria-label="Close cart" title="Close cart">✕</button>
       </div>
 
-      <!-- Standard Nationwide Delivery Banner -->
-      <div id="cart-delivery-banner" class="cart-delivery-banner">
-        <div class="cart-delivery-text">
-          <span>🚚 <strong>Nationwide Delivery: ₦5,000</strong> per order</span>
-          <span class="cart-delivery-subnote">Remote location courier waybill surcharges confirmed via WhatsApp</span>
+      <!-- Floating Delivery Notice (temporary overlay on drawer open) -->
+      <div id="cart-delivery-notice" class="cart-delivery-notice" role="status" aria-live="polite" aria-label="Delivery Information" style="display:none;" aria-hidden="true">
+        <div class="delivery-notice-inner">
+          <div class="delivery-notice-header">
+            <span class="delivery-notice-title">🚚 Delivery Information</span>
+            <button type="button" class="delivery-notice-dismiss" onclick="dismissCartDeliveryNotice(true)" aria-label="Dismiss delivery notice" title="Dismiss delivery notice">✕</button>
+          </div>
+          <ul class="delivery-notice-bullets">
+            <li>Nationwide delivery: <strong>₦5,000</strong> per order.</li>
+            <li>Remote locations: courier waybill surcharges are confirmed via WhatsApp.</li>
+          </ul>
         </div>
       </div>
+      <!-- Hidden hook to maintain backwards-compatibility with legacy queries for #cart-delivery-banner -->
+      <div id="cart-delivery-banner" style="display:none;" aria-hidden="true"></div>
 
       <!-- Cart Items Scrollable Container -->
       <div id="cart-items-container" class="cart-items-container">
@@ -344,6 +352,67 @@ let isScrollLocked = false;
 let savedBodyOverflow = "";
 let savedHtmlOverflow = "";
 let lastAnnouncedCartText = "";
+let deliveryNoticeTimer = null;
+let isDeliveryNoticeManuallyDismissed = false;
+
+function showCartDeliveryNotice() {
+  if (typeof document === "undefined") return;
+  if (isDeliveryNoticeManuallyDismissed) return;
+
+  const notice = document.getElementById("cart-delivery-notice");
+  if (!notice) return;
+
+  if (deliveryNoticeTimer) {
+    clearTimeout(deliveryNoticeTimer);
+    deliveryNoticeTimer = null;
+  }
+
+  notice.style.display = "block";
+  notice.setAttribute("aria-hidden", "false");
+  const dismissBtn = notice.querySelector(".delivery-notice-dismiss");
+  if (dismissBtn) {
+    dismissBtn.removeAttribute("aria-hidden");
+  }
+
+  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => {
+      notice.classList.add("show");
+    });
+  } else {
+    notice.classList.add("show");
+  }
+
+  // Automatically dismiss after ~4.5 seconds
+  deliveryNoticeTimer = setTimeout(() => {
+    dismissCartDeliveryNotice(false);
+  }, 4500);
+}
+
+function dismissCartDeliveryNotice(manual = false) {
+  if (deliveryNoticeTimer) {
+    clearTimeout(deliveryNoticeTimer);
+    deliveryNoticeTimer = null;
+  }
+  const notice = document.getElementById("cart-delivery-notice");
+  if (notice) {
+    notice.classList.remove("show");
+    notice.style.display = "none";
+    notice.setAttribute("aria-hidden", "true");
+    const dismissBtn = notice.querySelector(".delivery-notice-dismiss");
+    if (dismissBtn) {
+      if (typeof document !== "undefined" && document.activeElement === dismissBtn) {
+        const drawerClose = document.querySelector("#qj-cart-drawer .cart-close-btn");
+        if (drawerClose && typeof drawerClose.focus === "function") {
+          drawerClose.focus();
+        }
+      }
+      dismissBtn.setAttribute("aria-hidden", "true");
+    }
+  }
+  if (manual) {
+    isDeliveryNoticeManuallyDismissed = true;
+  }
+}
 
 function lockBodyScroll() {
   if (typeof document === "undefined") return;
@@ -525,6 +594,9 @@ function openCartDrawer(options = {}) {
     drawer.setAttribute("aria-hidden", "false");
     lockBodyScroll();
 
+    // Show floating delivery notice overlay
+    showCartDeliveryNotice();
+
     // History API: Push state on drawer open to support browser back / mobile swipe-back
     if (!options.fromHistory && !isDrawerHistoryPushed && typeof window !== "undefined" && window.history && typeof window.history.pushState === "function") {
       try {
@@ -553,6 +625,10 @@ function openCartDrawer(options = {}) {
 }
 
 function closeCartDrawer(options = {}) {
+  // Ensure delivery notice does not linger after cart closes
+  dismissCartDeliveryNotice(false);
+  isDeliveryNoticeManuallyDismissed = false;
+
   const backdrop = document.getElementById("qj-cart-backdrop");
   const drawer = document.getElementById("qj-cart-drawer");
 
@@ -1631,6 +1707,10 @@ function getDrawerFocusableElements(drawer) {
     if (el.disabled) return false;
     if (typeof el.getAttribute === "function" && el.getAttribute("aria-hidden") === "true") return false;
     if (el.style && (el.style.display === "none" || el.style.visibility === "hidden")) return false;
+    if (typeof el.closest === "function") {
+      const hiddenAncestor = el.closest('[style*="display: none"], [style*="display:none"], [aria-hidden="true"]');
+      if (hiddenAncestor && hiddenAncestor !== el) return false;
+    }
     return true;
   });
 }
@@ -1730,6 +1810,8 @@ if (typeof module !== "undefined" && module.exports) {
     getDrawerFocusableElements,
     trapCartDrawerFocus,
     announceCartTotals,
+    showCartDeliveryNotice,
+    dismissCartDeliveryNotice,
     isAnyOverlayActive,
     lockBodyScroll,
     restoreBodyScroll,

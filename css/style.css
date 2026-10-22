@@ -2351,25 +2351,101 @@ footer {
   color: #ef4444;
 }
 
-/* Standard Nationwide Delivery Bar */
-.cart-delivery-banner {
-  background: rgba(0, 255, 135, 0.06);
-  border-bottom: 1px solid var(--border-accent);
-  padding: 12px 24px;
+/* Floating Delivery Notice (Temporary Overlay Toast) */
+.cart-delivery-notice {
+  position: absolute;
+  top: 76px;
+  left: 16px;
+  right: 16px;
+  z-index: 30;
+  background: rgba(18, 24, 38, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-accent, rgba(0, 255, 135, 0.3));
+  border-radius: var(--radius-sm, 8px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6), 0 0 12px rgba(0, 255, 135, 0.08);
+  padding: 10px 14px 11px;
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: auto;
+  transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
-.cart-delivery-text {
-  font-size: 0.84rem;
-  color: var(--text-primary);
-  text-align: center;
+.cart-delivery-notice.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.delivery-notice-inner {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
 }
 
-.cart-delivery-subnote {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
+.delivery-notice-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.delivery-notice-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--accent-green, #00ff87);
+  letter-spacing: 0.2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.delivery-notice-dismiss {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  transition: all var(--transition, 0.2s ease);
+}
+
+.delivery-notice-dismiss:hover {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.delivery-notice-bullets {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.76rem;
+  color: var(--text-secondary, #cbd5e1);
+  line-height: 1.45;
+}
+
+.delivery-notice-bullets li {
+  margin-bottom: 2px;
+}
+
+.delivery-notice-bullets li:last-child {
+  margin-bottom: 0;
+}
+
+.delivery-notice-bullets strong {
+  color: var(--text-primary, #ffffff);
+}
+
+/* Legacy banner compatibility */
+.cart-delivery-banner {
+  display: none;
 }
 
 /* Cart Items Container */
@@ -2668,8 +2744,10 @@ footer {
 
 @media (prefers-reduced-motion: reduce) {
   .cart-drawer,
-  .cart-backdrop {
+  .cart-backdrop,
+  .cart-delivery-notice {
     transition: none !important;
+    transform: none !important;
   }
 }
 
