@@ -91,7 +91,7 @@ async function getAdminSession() {
     return global.getAdminSession();
   }
   const client = getSupabaseClient();
-  if (!client) return null;
+  if (!client || !client.auth || typeof client.auth.getSession !== "function") return null;
   const { data } = await client.auth.getSession();
   return data?.session || null;
 }
@@ -122,7 +122,11 @@ async function uploadProductImage(file, session) {
   }
 
   const client = getSupabaseClient();
-  if (!client || !session) throw new Error("Not authenticated or Supabase not configured.");
+  if (!client) throw new Error("Not authenticated or Supabase not configured.");
+  const currentSession = (typeof getAdminSession === "function")
+    ? await getAdminSession()
+    : (client.auth && typeof client.auth.getSession === "function" ? (await client.auth.getSession())?.data?.session : null);
+  if (!currentSession) throw new Error("Not authenticated – session missing.");
 
   const rawExt = file.name.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g, "");
   const ext = ["jpg", "jpeg", "png", "webp"].includes(rawExt) ? rawExt : "jpg";
@@ -149,7 +153,7 @@ async function uploadProductImage(file, session) {
  * Delete a product image from Supabase Storage by its full public URL.
  * Safely parses the object path within the product-images bucket.
  */
-async function deleteStorageImageByUrl(imageUrl, session) {
+async function deleteStorageImageByUrl(imageUrl, session = null) {
   if (!imageUrl || typeof imageUrl !== "string") return { success: true, skipped: true };
 
   // Only attempt storage deletion if image URL points to the Supabase product-images bucket
@@ -158,6 +162,14 @@ async function deleteStorageImageByUrl(imageUrl, session) {
   }
 
   const client = getSupabaseClient();
+  if (client && typeof getAdminSession === "function") {
+    const liveSession = await getAdminSession();
+    if (liveSession) {
+      session = liveSession;
+    } else if (client.auth && typeof client.auth.getSession === "function") {
+      session = null;
+    }
+  }
   if (!client || !session) return { success: false, error: "Not authenticated or Supabase not configured." };
 
   try {
@@ -299,8 +311,16 @@ async function fetchProducts({ category = null, featuredOnly = false, search = n
 /**
  * Insert a new product into the database (requires auth session).
  */
-async function publishProduct(productData, session) {
+async function publishProduct(productData, session = null) {
   const client = getSupabaseClient();
+  if (client && typeof getAdminSession === "function") {
+    const liveSession = await getAdminSession();
+    if (liveSession) {
+      session = liveSession;
+    } else if (client.auth && typeof client.auth.getSession === "function") {
+      session = null;
+    }
+  }
   if (!client || !session) throw new Error("Not authenticated.");
 
   const slug = productData.product_name
@@ -328,8 +348,16 @@ async function publishProduct(productData, session) {
 /**
  * Delete a product by ID (requires auth session).
  */
-async function deleteProductById(id, session) {
+async function deleteProductById(id, session = null) {
   const client = getSupabaseClient();
+  if (client && typeof getAdminSession === "function") {
+    const liveSession = await getAdminSession();
+    if (liveSession) {
+      session = liveSession;
+    } else if (client.auth && typeof client.auth.getSession === "function") {
+      session = null;
+    }
+  }
   if (!client || !session) throw new Error("Not authenticated.");
   const { error } = await client.from("products").delete().eq("id", id);
   if (error) throw new Error(`Delete failed: ${error.message}`);
@@ -338,8 +366,16 @@ async function deleteProductById(id, session) {
 /**
  * Toggle featured status for a product (requires auth session).
  */
-async function toggleFeatured(id, featured, session) {
+async function toggleFeatured(id, featured, session = null) {
   const client = getSupabaseClient();
+  if (client && typeof getAdminSession === "function") {
+    const liveSession = await getAdminSession();
+    if (liveSession) {
+      session = liveSession;
+    } else if (client.auth && typeof client.auth.getSession === "function") {
+      session = null;
+    }
+  }
   if (!client || !session) throw new Error("Not authenticated.");
   const { error } = await client.from("products").update({ featured }).eq("id", id);
   if (error) throw new Error(`Update failed: ${error.message}`);
@@ -351,8 +387,13 @@ async function toggleFeatured(id, featured, session) {
 async function updateProduct(id, productData, session = null) {
   if (!id) throw new Error("Product ID is required for update.");
   const client = getSupabaseClient();
-  if (client && !session && typeof getAdminSession === "function") {
-    session = await getAdminSession();
+  if (client && typeof getAdminSession === "function") {
+    const liveSession = await getAdminSession();
+    if (liveSession) {
+      session = liveSession;
+    } else if (client.auth && typeof client.auth.getSession === "function") {
+      session = null;
+    }
   }
   if (!client || !session) throw new Error("Not authenticated.");
 
@@ -895,6 +936,9 @@ if (typeof module !== "undefined" && module.exports) {
     publishProduct,
     deleteProductById,
     normaliseProduct,
+    uploadProductImage,
+    deleteStorageImageByUrl,
+    toggleFeatured,
   };
 }
 
